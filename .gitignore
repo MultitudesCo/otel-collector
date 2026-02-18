@@ -1,9 +1,4 @@
-# Environment variables with secrets
-.env
-
 # Logs
-logs/
-otel-logs/
 *.log
 
 # Build artifacts

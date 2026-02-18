@@ -51,41 +51,6 @@ The collector is now running and listening for OTLP metrics on:
 - `localhost:4317` — gRPC
 - `localhost:4318` — HTTP
 
-If you would like to enable debug logging, pass that flag to the container as well:
-```bash
- -e DEBUG=true \
-```
-
-## Docker Compose (evaluation / local testing)
-
-A `docker-compose.yaml` is included for convenience when evaluating the collector locally. It is not recommended for production deployments.
-
-**1. Configure your credentials**
-
-```bash
-cp .env.example .env
-```
-
-Edit `.env` and set your token and endpoint:
-
-```env
-MULTITUDES_INTEGRATION_TOKEN=your_bearer_token_here
-MULTITUDES_INTEGRATION_ENDPOINT=https://integrations.multitudes.co/ai/otel
-```
-
-**2. Build and run**
-
-```bash
-docker build -t otelcol-multitudes:latest .
-docker-compose up -d
-```
-
-To enable verbose debug logging:
-
-```bash
-DEBUG=true docker-compose up
-```
-
 ## Configuring your AI tools
 
 Point your AI tools at the collector by setting the OTLP endpoint environment variable:
@@ -101,10 +66,8 @@ For Claude Code, add this to your shell profile (`.bashrc`, `.zshrc`, etc.) or s
 ```
 .
 ├── Dockerfile                      # Builds the custom collector image
-├── docker-compose.yaml             # Convenience setup for local evaluation
 ├── builder-config.yaml             # OTel Collector Builder configuration
 ├── otel-collector-config.yaml      # Collector configuration (baked into image)
-├── .env.example                    # Environment variable template
 └── aggregationprocessor/           # Custom Go aggregation processor
     ├── processor.go                # Processor wiring and emit loop
     ├── aggregator.go               # Metric bucketing and aggregation logic
@@ -132,30 +95,6 @@ The collector aggregates metrics by `user.email` over 1-hour windows before send
 
 The aggregation window and other settings can be adjusted in `otel-collector-config.yaml`.
 
-## Advanced: AWS SSM for token management
-
-If you prefer to manage your Multitudes token in AWS SSM Parameter Store rather than an environment variable, you can fetch it at container startup.
-
-Store your token in SSM:
-
-```bash
-aws ssm put-parameter \
-  --name "/multitudes/integration-service/bearer-token" \
-  --value "your_bearer_token_here" \
-  --type SecureString
-```
-
-Then in your container startup script, fetch the parameter and pass it as an environment variable:
-
-```bash
-export MULTITUDES_INTEGRATION_TOKEN=$(aws ssm get-parameter \
-  --name "/multitudes/integration-service/bearer-token" \
-  --with-decryption \
-  --query "Parameter.Value" \
-  --output text)
-```
-
-The container will need an IAM role with `ssm:GetParameter` permission on the parameter.
 
 ## Ports
 
