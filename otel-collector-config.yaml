@@ -27,13 +27,13 @@ processors:
   # Example: 30,000 individual metrics → 500 aggregated metrics (60x reduction)
   aggregation:
     attribute_key: "user.email"        # Group by user email
-    aggregation_interval: 10m
-    emit_interval: 1m
+    aggregation_interval: 1h
+    emit_interval: 1h
 
   # Batch processor - batches aggregated metrics before sending
   # Batches ~500 aggregated metrics per hour instead of ~30,000 individual metrics
   batch:
-    timeout: 600s               # 10 minutes
+    timeout: 3600s              # 1 hour
     send_batch_size: 20000      # Send early if batch reaches 20k metrics (safety valve)
     send_batch_max_size: 25000  # Hard limit (matches API validation)
 
@@ -65,7 +65,7 @@ service:
     # PRODUCTION: Full pipeline with aggregation
     # Pipeline order: memory_limiter → aggregation → batch → exporters
     # - memory_limiter: Prevents memory overload
-    # - aggregation: Groups metrics by user email over 1-hour windows
+    # - aggregation: Groups metrics by user email over 1-hour windows, emits hourly
     # - batch: Batches aggregated metrics for network efficiency
     metrics:
       receivers: [otlp]
