@@ -53,13 +53,24 @@ The collector is now running and listening for OTLP metrics on:
 
 ## Configuring your AI tools
 
-Point your AI tools at the collector by setting the OTLP endpoint environment variable:
+Each person using Claude Code should enable exporting metrics to the OTLP endpoint. This can be done by configuring a `~/.claude/settings.json` file:
 
 ```bash
-export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
+{
+  "env": {
+    "CLAUDE_CODE_ENABLE_TELEMETRY": "1",
+    "OTEL_METRICS_EXPORTER": "otlp",
+    "OTEL_LOGS_EXPORTER": "otlp",
+    "OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",
+    "OTEL_EXPORTER_OTLP_ENDPOINT": "http://<endpoint>:4318",
+    "OTEL_METRIC_EXPORT_INTERVAL": "10000"
+  },
+}
+
 ```
 
-For Claude Code, add this to your shell profile (`.bashrc`, `.zshrc`, etc.) or set it in your Claude Code configuration.
+Replace `http://<endpoint>:4318` with the endpoint configured to expose the otel-collector
+
 
 ## Repository structure
 
