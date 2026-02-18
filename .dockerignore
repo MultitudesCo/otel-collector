@@ -1,0 +1,38 @@
+# Node modules
+node_modules/
+npm-debug.log
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Logs
+logs/
+*.log
+
+# Test files
+test-server.js
+test-telemetry.js
+
+# Development files
+.vscode/
+.DS_Store
+
+# Documentation (not needed in container)
+README.md
+SSM_SECRETS_GUIDE.md
+CAPACITY_PLANNING.md
+CLAUDE_CODE_METRICS.md
+
+# Terraform files (not needed in container)
+terraform/
+
+# Docker files
+docker-compose.yaml
+Dockerfile
+.dockerignore
+
+# Git
+.git/
+.gitignore

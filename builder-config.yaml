@@ -1,0 +1,23 @@
+dist:
+  name: otelcol-multitudes
+  description: Custom OpenTelemetry Collector for Multitudes with aggregation processor
+  output_path: ./dist
+
+extensions:
+  - gomod: go.opentelemetry.io/collector/extension/zpagesextension v0.115.0
+  - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/extension/healthcheckextension v0.115.0
+  - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/extension/pprofextension v0.115.0
+
+receivers:
+  - gomod: go.opentelemetry.io/collector/receiver/otlpreceiver v0.115.0
+
+processors:
+  - gomod: go.opentelemetry.io/collector/processor/memorylimiterprocessor v0.115.0
+  - gomod: go.opentelemetry.io/collector/processor/batchprocessor v0.115.0
+  # Custom aggregation processor - local path
+  - gomod: github.com/multitudes/otel-collector/aggregationprocessor v0.0.0
+    path: ./aggregationprocessor
+
+exporters:
+  - gomod: go.opentelemetry.io/collector/exporter/debugexporter v0.115.0
+  - gomod: go.opentelemetry.io/collector/exporter/otlphttpexporter v0.115.0

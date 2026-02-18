@@ -1,0 +1,73 @@
+# OTEL Collector Configuration - PRODUCTION
+#
+# This configuration is optimized for production deployment:
+# - 1-hour batching for efficiency
+# - Aggregation enabled (reduces data volume 60x)
+# - Debug output disabled
+# - Connects to production integration-service
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  # Memory limiter processor - prevents memory overload
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 512
+    spike_limit_mib: 128
+
+  # Aggregation processor - aggregates metrics by user email over time windows
+  # Groups metrics by user.email attribute and sums values within each time window
+  # This significantly reduces data egress: 100 users × 300 metrics/hour → 100 aggregated points/hour
+  # Example: 30,000 individual metrics → 500 aggregated metrics (60x reduction)
+  aggregation:
+    attribute_key: "user.email"        # Group by user email
+    aggregation_interval: 10m
+    emit_interval: 1m
+
+  # Batch processor - batches aggregated metrics before sending
+  # Batches ~500 aggregated metrics per hour instead of ~30,000 individual metrics
+  batch:
+    timeout: 600s               # 10 minutes
+    send_batch_size: 20000      # Send early if batch reaches 20k metrics (safety valve)
+    send_batch_max_size: 25000  # Hard limit (matches API validation)
+
+exporters:
+  # Integration service exporter - sends data to PRODUCTION integration service
+  # Endpoint should point to production URL (configure via environment variable)
+  otlphttp/integration:
+    endpoint: ${env:MULTITUDES_INTEGRATION_ENDPOINT}
+    encoding: json
+    headers:
+      Authorization: "Bearer ${env:MULTITUDES_INTEGRATION_TOKEN}"
+    timeout: 30s
+    retry_on_failure:
+      enabled: true
+      initial_interval: 5s
+      max_interval: 30s
+      max_elapsed_time: 300s
+
+extensions:
+  health_check:
+  pprof:
+    endpoint: 0.0.0.0:1777
+  zpages:
+    endpoint: 0.0.0.0:55679
+
+service:
+  extensions: [health_check, pprof, zpages]
+  pipelines:
+    # PRODUCTION: Full pipeline with aggregation
+    # Pipeline order: memory_limiter → aggregation → batch → exporters
+    # - memory_limiter: Prevents memory overload
+    # - aggregation: Groups metrics by user email over 1-hour windows
+    # - batch: Batches aggregated metrics for network efficiency
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, aggregation, batch]
+      exporters: [otlphttp/integration]

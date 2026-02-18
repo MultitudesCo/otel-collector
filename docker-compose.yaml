@@ -1,0 +1,26 @@
+services:
+  otel-collector:
+    # Use custom collector with aggregation processor
+    # Build with: docker build -t otelcol-multitudes:latest .
+    image: otelcol-multitudes:latest
+    ports:
+      - "127.0.0.1:4317:4317"   # OTLP gRPC
+      - "127.0.0.1:4318:4318"   # OTLP HTTP
+      - "127.0.0.1:55679:55679" # zPages diagnostics
+      - "127.0.0.1:13133:13133" # Health check
+    volumes:
+      - ~/.aws:/root/.aws:ro  # AWS credentials for SSM access (optional)
+    environment:
+      # Option 1: Fetch from SSM at startup (recommended for production)
+      - SSM_PARAMETER_PATH=${SSM_PARAMETER_PATH:-/multitudes/integration-service/bearer-token}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      # Option 2: Use env variable directly (for local development)
+      - MULTITUDES_INTEGRATION_TOKEN=${MULTITUDES_INTEGRATION_TOKEN}
+      # Integration service endpoint (production should override this)
+      - MULTITUDES_INTEGRATION_ENDPOINT=${MULTITUDES_INTEGRATION_ENDPOINT:-http://host.docker.internal:34569/integration/telemetry/ai/otel}
+      # Enable debug logging (set DEBUG=true to enable)
+      - DEBUG=${DEBUG:-}
+    # Uncomment to use SSM Parameter Store:
+    # command: ["/start-collector.sh"]
+    # Comment out for SSM, uncomment for env variable:
+    command: ["--config=/etc/otelcol-contrib/otel-collector-config.yaml"]

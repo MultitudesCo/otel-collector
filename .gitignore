@@ -1,0 +1,28 @@
+# Environment variables with secrets
+.env
+
+# Logs
+logs/
+otel-logs/
+*.log
+
+# Build artifacts
+dist/
+
+# Go build artifacts
+aggregationprocessor/go.sum
+
+# Docker volumes
+data/
+
+# Node modules
+node_modules/
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
