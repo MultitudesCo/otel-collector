@@ -82,11 +82,15 @@ func (ma *MetricAggregator) processMetric(metric pmetric.Metric, resourceAttrs p
 	metricName := metric.Name()
 	metricType := metric.Type()
 
+	debugLog("DEBUG: Processing metric:", metricName, "type:", metricType, "unit:", metric.Unit())
+
 	switch metricType {
 	case pmetric.MetricTypeSum:
 		ma.processSum(metric.Sum(), metricName, resourceAttrs, metric.Unit(), metric.Description())
 	case pmetric.MetricTypeGauge:
 		ma.processGauge(metric.Gauge(), metricName, resourceAttrs, metric.Unit(), metric.Description())
+	default:
+		debugLog("DEBUG: Skipping unsupported metric type:", metricType, "for metric:", metricName)
 	}
 }
 
@@ -99,13 +103,11 @@ func (ma *MetricAggregator) processSum(sum pmetric.Sum, metricName string, resou
 		attributeValue, found := dp.Attributes().Get(ma.attributeKey)
 		if !found {
 			// Skip data points without the required attribute
-			debugLog("DEBUG: Data point missing attribute", ma.attributeKey, "- skipping")
+			debugLog("DEBUG: Data point missing attribute", ma.attributeKey, "- skipping (metric:", metricName, ")")
 			continue
 		}
-		debugLog("DEBUG: Found attribute", ma.attributeKey, "=", attributeValue.AsString())
 
 		timestamp := dp.Timestamp().AsTime()
-
 		timeBucket := ma.getTimeBucket(timestamp)
 
 		dpAttrsKey := serializeAttributes(dp.Attributes())
@@ -135,15 +137,20 @@ func (ma *MetricAggregator) processSum(sum pmetric.Sum, metricName string, resou
 		}
 
 		// Accumulate value
+		var dpValue float64
 		switch dp.ValueType() {
 		case pmetric.NumberDataPointValueTypeDouble:
-			agg.sum += dp.DoubleValue()
+			dpValue = dp.DoubleValue()
 		case pmetric.NumberDataPointValueTypeInt:
-			agg.sum += float64(dp.IntValue())
+			dpValue = float64(dp.IntValue())
 		}
+		agg.sum += dpValue
 
 		agg.count++
 		agg.lastTimestamp = timestamp.UnixNano()
+
+		debugLog(fmt.Sprintf("DEBUG: [sum] %s{%s=%s} value=%.4f running_sum=%.4f count=%d bucket=%d",
+			metricName, ma.attributeKey, attributeValue.AsString(), dpValue, agg.sum, agg.count, timeBucket))
 	}
 }
 
@@ -156,13 +163,11 @@ func (ma *MetricAggregator) processGauge(gauge pmetric.Gauge, metricName string,
 		attributeValue, found := dp.Attributes().Get(ma.attributeKey)
 		if !found {
 			// Skip data points without the required attribute
-			debugLog("DEBUG: Data point missing attribute", ma.attributeKey, "- skipping")
+			debugLog("DEBUG: Data point missing attribute", ma.attributeKey, "- skipping (metric:", metricName, ")")
 			continue
 		}
-		debugLog("DEBUG: Found attribute", ma.attributeKey, "=", attributeValue.AsString())
 
 		timestamp := dp.Timestamp().AsTime()
-
 		timeBucket := ma.getTimeBucket(timestamp)
 		dpAttrsKey := serializeAttributes(dp.Attributes())
 
@@ -189,15 +194,20 @@ func (ma *MetricAggregator) processGauge(gauge pmetric.Gauge, metricName string,
 		}
 
 		// For gauges, we sum the values (could also use last value, max, min, etc.)
+		var dpValue float64
 		switch dp.ValueType() {
 		case pmetric.NumberDataPointValueTypeDouble:
-			agg.sum += dp.DoubleValue()
+			dpValue = dp.DoubleValue()
 		case pmetric.NumberDataPointValueTypeInt:
-			agg.sum += float64(dp.IntValue())
+			dpValue = float64(dp.IntValue())
 		}
+		agg.sum += dpValue
 
 		agg.count++
 		agg.lastTimestamp = timestamp.UnixNano()
+
+		debugLog(fmt.Sprintf("DEBUG: [gauge] %s{%s=%s} value=%.4f running_sum=%.4f count=%d bucket=%d",
+			metricName, ma.attributeKey, attributeValue.AsString(), dpValue, agg.sum, agg.count, timeBucket))
 	}
 }
 
@@ -227,7 +237,11 @@ func (ma *MetricAggregator) GetAndClearCompletedMetrics(now time.Time) pmetric.M
 		return md
 	}
 
-	debugLog("DEBUG: Found", len(completedMetrics), "completed metrics to emit")
+	debugLog("DEBUG: Found", len(completedMetrics), "completed metrics to emit:")
+	for key, agg := range completedMetrics {
+		debugLog(fmt.Sprintf("DEBUG:   -> %s{%s=%s} sum=%.4f count=%d bucket=%d",
+			key.metricName, ma.attributeKey, key.attributeValue, agg.sum, agg.count, key.timeBucket))
+	}
 
 	// Build the metrics output
 	rm := md.ResourceMetrics().AppendEmpty()
