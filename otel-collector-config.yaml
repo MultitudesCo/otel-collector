@@ -16,14 +16,14 @@ processors:
   # Groups metrics by user.email attribute and sums values within each time window
   aggregation:
     attribute_key: "user.email"        # Group by user email
-    aggregation_interval: 1h
-    emit_interval: 10m
+    aggregation_interval: 5m
+    emit_interval: 1m
 
-  # Batch processor - batches aggregated metrics before sending
+  # Batch processor - flushes completed buckets promptly
   batch:
-    timeout: 3600s             # 1 hour
+    timeout: 5m
     send_batch_size: 20000      # Send early if batch reaches 20k metrics (safety valve)
-    send_batch_max_size: 25000  # Hard limit 
+    send_batch_max_size: 25000  # Hard limit
 
 exporters:
   otlphttp/integration:
