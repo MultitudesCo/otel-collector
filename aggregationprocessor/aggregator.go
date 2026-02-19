@@ -9,8 +9,12 @@ import (
 	"go.opentelemetry.io/collector/pdata/pmetric"
 )
 
+func isDebug() bool {
+	return os.Getenv("MULTITUDES_DEBUG") != ""
+}
+
 func debugLog(args ...any) {
-	if os.Getenv("MULTITUDES_DEBUG") != "" {
+	if isDebug() {
 		fmt.Println(args...)
 	}
 }
@@ -149,8 +153,10 @@ func (ma *MetricAggregator) processSum(sum pmetric.Sum, metricName string, resou
 		agg.count++
 		agg.lastTimestamp = timestamp.UnixNano()
 
-		debugLog(fmt.Sprintf("DEBUG: [sum] %s{%s=%s} value=%.4f running_sum=%.4f count=%d bucket=%d",
-			metricName, ma.attributeKey, attributeValue.AsString(), dpValue, agg.sum, agg.count, timeBucket))
+		if isDebug() {
+			debugLog(fmt.Sprintf("DEBUG: [sum] %s{%s} value=%.4f running_sum=%.4f count=%d bucket=%d",
+				metricName, formatAttributes(dp.Attributes()), dpValue, agg.sum, agg.count, timeBucket))
+		}
 	}
 }
 
@@ -206,8 +212,10 @@ func (ma *MetricAggregator) processGauge(gauge pmetric.Gauge, metricName string,
 		agg.count++
 		agg.lastTimestamp = timestamp.UnixNano()
 
-		debugLog(fmt.Sprintf("DEBUG: [gauge] %s{%s=%s} value=%.4f running_sum=%.4f count=%d bucket=%d",
-			metricName, ma.attributeKey, attributeValue.AsString(), dpValue, agg.sum, agg.count, timeBucket))
+		if isDebug() {
+			debugLog(fmt.Sprintf("DEBUG: [gauge] %s{%s} value=%.4f running_sum=%.4f count=%d bucket=%d",
+				metricName, formatAttributes(dp.Attributes()), dpValue, agg.sum, agg.count, timeBucket))
+		}
 	}
 }
 
@@ -237,10 +245,12 @@ func (ma *MetricAggregator) GetAndClearCompletedMetrics(now time.Time) pmetric.M
 		return md
 	}
 
-	debugLog("DEBUG: Found", len(completedMetrics), "completed metrics to emit:")
-	for key, agg := range completedMetrics {
-		debugLog(fmt.Sprintf("DEBUG:   -> %s{%s=%s} sum=%.4f count=%d bucket=%d",
-			key.metricName, ma.attributeKey, key.attributeValue, agg.sum, agg.count, key.timeBucket))
+	if isDebug() {
+		debugLog("DEBUG: Found", len(completedMetrics), "completed metrics to emit:")
+		for key, agg := range completedMetrics {
+			debugLog(fmt.Sprintf("DEBUG:   -> %s{%s=%s} sum=%.4f count=%d bucket=%d",
+				key.metricName, ma.attributeKey, key.attributeValue, agg.sum, agg.count, key.timeBucket))
+		}
 	}
 
 	// Build the metrics output
@@ -304,6 +314,19 @@ func (ma *MetricAggregator) GetAndClearCompletedMetrics(now time.Time) pmetric.M
 func (ma *MetricAggregator) getTimeBucket(t time.Time) int64 {
 	bucketSize := int64(ma.aggregationInterval.Seconds())
 	return t.Unix() / bucketSize * bucketSize
+}
+
+// formatAttributes formats attributes as a comma-separated label string for debug logging
+func formatAttributes(attrs pcommon.Map) string {
+	result := ""
+	attrs.Range(func(k string, v pcommon.Value) bool {
+		if result != "" {
+			result += ", "
+		}
+		result += k + "=" + v.AsString()
+		return true
+	})
+	return result
 }
 
 // serializeAttributes creates a string key from attributes for deduplication
