@@ -45,6 +45,9 @@ docker run -d \
   -p 127.0.0.1:4318:4318 \
   -p 127.0.0.1:13133:13133 \
   otelcol-multitudes:latest
+
+# To enable verbose debug logging from the aggregation processor, add:
+#   -e MULTITUDES_DEBUG=1 \
 ```
 
 The collector is now running and listening for OTLP metrics on:
@@ -94,7 +97,7 @@ The collector is configured via environment variables:
 |---|---|---|
 | `MULTITUDES_INTEGRATION_TOKEN` | Yes | Bearer token provided by Multitudes |
 | `MULTITUDES_INTEGRATION_ENDPOINT` | Yes | Multitudes ingestion endpoint |
-| `DEBUG` | No | Set to `true` to enable verbose debug logging |
+| `MULTITUDES_DEBUG` | No | Set to any non-empty value to enable verbose debug logging from the aggregation processor |
 
 ### Aggregation
 

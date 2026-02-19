@@ -10,7 +10,7 @@ import (
 )
 
 func debugLog(args ...any) {
-	if os.Getenv("DEBUG") != "" {
+	if os.Getenv("MULTITUDES_DEBUG") != "" {
 		fmt.Println(args...)
 	}
 }
