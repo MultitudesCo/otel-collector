@@ -19,6 +19,23 @@ func debugLog(args ...any) {
 	}
 }
 
+// redact masks a value for safe logging (e.g. "josh@example.com" -> "jo***@example.com")
+func redact(s string) string {
+	for i, c := range s {
+		if c == '@' {
+			if i > 2 {
+				return s[:2] + "***" + s[i:]
+			}
+			return "***" + s[i:]
+		}
+	}
+	// Not an email, mask all but first 2 chars
+	if len(s) > 2 {
+		return s[:2] + "***"
+	}
+	return "***"
+}
+
 // aggregationKey uniquely identifies a metric for aggregation
 type aggregationKey struct {
 	attributeValue string // e.g., user email
@@ -58,6 +75,9 @@ func NewMetricAggregator(attributeKey string, aggregationInterval time.Duration)
 		metrics:             make(map[aggregationKey]*aggregatedMetric),
 	}
 }
+
+// maxFutureSkew is how far in the future a timestamp is allowed to be before it gets clamped.
+const maxFutureSkew = 5 * time.Minute
 
 // AddMetrics adds metrics to the aggregation state
 func (ma *MetricAggregator) AddMetrics(md pmetric.Metrics) {
@@ -112,6 +132,11 @@ func (ma *MetricAggregator) processSum(sum pmetric.Sum, metricName string, resou
 		}
 
 		timestamp := dp.Timestamp().AsTime()
+		// Clamp future timestamps to now to prevent buckets that never complete.
+		if now := time.Now(); timestamp.After(now.Add(maxFutureSkew)) {
+			debugLog("DEBUG: Clamping future timestamp", timestamp, "to now for metric:", metricName)
+			timestamp = now
+		}
 		timeBucket := ma.getTimeBucket(timestamp)
 
 		dpAttrsKey := serializeAttributes(dp.Attributes())
@@ -174,6 +199,11 @@ func (ma *MetricAggregator) processGauge(gauge pmetric.Gauge, metricName string,
 		}
 
 		timestamp := dp.Timestamp().AsTime()
+		// Clamp future timestamps to now to prevent buckets that never complete.
+		if now := time.Now(); timestamp.After(now.Add(maxFutureSkew)) {
+			debugLog("DEBUG: Clamping future timestamp", timestamp, "to now for metric:", metricName)
+			timestamp = now
+		}
 		timeBucket := ma.getTimeBucket(timestamp)
 		dpAttrsKey := serializeAttributes(dp.Attributes())
 
@@ -230,15 +260,21 @@ func (ma *MetricAggregator) GetAndClearCompletedMetrics(now time.Time) pmetric.M
 	// DEBUG: Log checking for completed metrics
 	debugLog("DEBUG: GetAndClearCompletedMetrics - currentBucket:", currentBucket, "totalMetrics:", len(ma.metrics))
 
-	// Find all completed metrics (time buckets before current)
+	// Find all completed metrics (time buckets before current).
+	// We rebuild the active map rather than calling delete() on each key — this
+	// allows the GC to reclaim the backing array of the old map, avoiding the
+	// RSS oscillation that can falsely trigger the memory limiter.
 	completedMetrics := make(map[aggregationKey]*aggregatedMetric)
+	remaining := make(map[aggregationKey]*aggregatedMetric, len(ma.metrics))
 	for key, agg := range ma.metrics {
 		debugLog("DEBUG: Checking metric bucket:", key.timeBucket, "< currentBucket:", currentBucket, "?", key.timeBucket < currentBucket)
 		if key.timeBucket < currentBucket {
 			completedMetrics[key] = agg
-			delete(ma.metrics, key) // Remove from active state
+		} else {
+			remaining[key] = agg
 		}
 	}
+	ma.metrics = remaining
 
 	if len(completedMetrics) == 0 {
 		debugLog("DEBUG: No completed metrics found")
@@ -249,7 +285,7 @@ func (ma *MetricAggregator) GetAndClearCompletedMetrics(now time.Time) pmetric.M
 		debugLog("DEBUG: Found", len(completedMetrics), "completed metrics to emit:")
 		for key, agg := range completedMetrics {
 			debugLog(fmt.Sprintf("DEBUG:   -> %s{%s=%s} sum=%.4f count=%d bucket=%d",
-				key.metricName, ma.attributeKey, key.attributeValue, agg.sum, agg.count, key.timeBucket))
+				key.metricName, ma.attributeKey, redact(key.attributeValue), agg.sum, agg.count, key.timeBucket))
 		}
 	}
 
@@ -316,14 +352,19 @@ func (ma *MetricAggregator) getTimeBucket(t time.Time) int64 {
 	return t.Unix() / bucketSize * bucketSize
 }
 
-// formatAttributes formats attributes as a comma-separated label string for debug logging
+// formatAttributes formats attributes as a comma-separated label string for debug logging.
+// Values for keys containing "email" or "user" are redacted.
 func formatAttributes(attrs pcommon.Map) string {
 	result := ""
 	attrs.Range(func(k string, v pcommon.Value) bool {
 		if result != "" {
 			result += ", "
 		}
-		result += k + "=" + v.AsString()
+		val := v.AsString()
+		if k == "user.email" || k == "user.id" || k == "user.name" {
+			val = redact(val)
+		}
+		result += k + "=" + val
 		return true
 	})
 	return result
