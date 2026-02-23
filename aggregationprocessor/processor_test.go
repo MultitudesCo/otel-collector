@@ -985,6 +985,161 @@ func TestResourceAttributesPreservedInOutput(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// End-to-end test with real Claude Code payloads
+// ---------------------------------------------------------------------------
+
+// TestClaudeCodeCostAggregationByModel feeds three realistic Claude Code OTLP
+// payloads (two models, same session) through the aggregator and verifies that
+// cost is summed correctly per-model.
+//
+// Input (claude_code.cost.usage, asDouble):
+//
+//	Payload 1: sonnet=0.039065,  haiku=0.000596
+//	Payload 2: haiku=0.01890945, sonnet=0.019894
+//	Payload 3: haiku=0.000395,   sonnet=0.02016125
+//
+// Expected totals:
+//
+//	claude-sonnet-4-6        = 0.039065 + 0.019894 + 0.02016125 = 0.07912025
+//	claude-haiku-4-5-20251001 = 0.000596 + 0.01890945 + 0.000395 = 0.02000045
+func TestClaudeCodeCostAggregationByModel(t *testing.T) {
+	const (
+		userEmail    = "josh@multitudes.com"
+		userID       = "965ad35a5b2f698e232309acb17e0fcac9efaa0f056bc4978dcaf942ead57896"
+		sessionID    = "7394d3a1-b1a5-4ec0-a258-ef1d01643dfa"
+		orgID        = "8385b83e-c151-4d79-a68b-eb9e4aab27ca"
+		accountUUID  = "b79238a2-c9ad-4bf3-96eb-8206a81f9a1c"
+		sonnetModel  = "claude-sonnet-4-6"
+		haikuModel   = "claude-haiku-4-5-20251001"
+	)
+
+	// Helper to build resource attributes matching the real Claude Code payload.
+	buildResourceAttrs := func(rm pmetric.ResourceMetrics) {
+		ra := rm.Resource().Attributes()
+		ra.PutStr("host.arch", "arm64")
+		ra.PutStr("os.type", "darwin")
+		ra.PutStr("os.version", "25.1.0")
+		ra.PutStr("service.name", "claude-code")
+		ra.PutStr("service.version", "2.1.50")
+	}
+
+	// Helper to set the common data point attributes present in every real dp.
+	setCommonDPAttrs := func(dp pmetric.NumberDataPoint, model string) {
+		dp.Attributes().PutStr("user.id", userID)
+		dp.Attributes().PutStr("session.id", sessionID)
+		dp.Attributes().PutStr("organization.id", orgID)
+		dp.Attributes().PutStr("user.email", userEmail)
+		dp.Attributes().PutStr("user.account_uuid", accountUUID)
+		dp.Attributes().PutStr("terminal.type", "ghostty")
+		dp.Attributes().PutStr("model", model)
+	}
+
+	// buildCostPayload constructs a single OTLP Metrics payload containing one
+	// claude_code.cost.usage metric with two data points (one per model).
+	buildCostPayload := func(
+		sonnetCost, haikuCost float64,
+		sonnetStartNs, sonnetTsNs, haikuStartNs, haikuTsNs uint64,
+	) pmetric.Metrics {
+		md := pmetric.NewMetrics()
+		rm := md.ResourceMetrics().AppendEmpty()
+		buildResourceAttrs(rm)
+
+		sm := rm.ScopeMetrics().AppendEmpty()
+		sm.Scope().SetName("com.anthropic.claude_code")
+		sm.Scope().SetVersion("2.1.50")
+
+		metric := sm.Metrics().AppendEmpty()
+		metric.SetName("claude_code.cost.usage")
+		metric.SetDescription("Cost of the Claude Code session")
+		metric.SetUnit("USD")
+		sum := metric.SetEmptySum()
+		sum.SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+		sum.SetIsMonotonic(true)
+
+		// Sonnet data point
+		dpSonnet := sum.DataPoints().AppendEmpty()
+		dpSonnet.SetStartTimestamp(pcommon.Timestamp(sonnetStartNs))
+		dpSonnet.SetTimestamp(pcommon.Timestamp(sonnetTsNs))
+		dpSonnet.SetDoubleValue(sonnetCost)
+		setCommonDPAttrs(dpSonnet, sonnetModel)
+
+		// Haiku data point
+		dpHaiku := sum.DataPoints().AppendEmpty()
+		dpHaiku.SetStartTimestamp(pcommon.Timestamp(haikuStartNs))
+		dpHaiku.SetTimestamp(pcommon.Timestamp(haikuTsNs))
+		dpHaiku.SetDoubleValue(haikuCost)
+		setCommonDPAttrs(dpHaiku, haikuModel)
+
+		return md
+	}
+
+	// Use a past timestamp so all data points land in a completed bucket.
+	pastNs := uint64(time.Now().Add(-2*time.Minute).UnixNano())
+
+	payload1 := buildCostPayload(0.039065, 0.000596, pastNs, pastNs, pastNs, pastNs)
+	payload2 := buildCostPayload(0.019894, 0.01890945, pastNs, pastNs, pastNs, pastNs)
+	payload3 := buildCostPayload(0.02016125, 0.000395, pastNs, pastNs, pastNs, pastNs)
+
+	agg := NewMetricAggregator("user.email", time.Minute)
+	agg.AddMetrics(payload1)
+	agg.AddMetrics(payload2)
+	agg.AddMetrics(payload3)
+
+	completed := agg.GetAndClearCompletedMetrics(time.Now())
+
+	if completed.DataPointCount() == 0 {
+		t.Fatal("Expected aggregated metrics to be emitted, got none")
+	}
+
+	// Collect emitted cost data points keyed by model.
+	costByModel := make(map[string]float64)
+	outRM := completed.ResourceMetrics().At(0)
+	for i := 0; i < outRM.ScopeMetrics().At(0).Metrics().Len(); i++ {
+		m := outRM.ScopeMetrics().At(0).Metrics().At(i)
+		if m.Name() != "claude_code.cost.usage" {
+			continue
+		}
+		for j := 0; j < m.Sum().DataPoints().Len(); j++ {
+			dp := m.Sum().DataPoints().At(j)
+			model, _ := dp.Attributes().Get("model")
+			costByModel[model.AsString()] += dp.DoubleValue()
+		}
+	}
+
+	const epsilon = 1e-9
+
+	wantSonnet := 0.039065 + 0.019894 + 0.02016125   // 0.07912025
+	wantHaiku := 0.000596 + 0.01890945 + 0.000395    // 0.02000045
+
+	if got := costByModel[sonnetModel]; abs(got-wantSonnet) > epsilon {
+		t.Errorf("cost for %s: got %.10f, want %.10f", sonnetModel, got, wantSonnet)
+	}
+	if got := costByModel[haikuModel]; abs(got-wantHaiku) > epsilon {
+		t.Errorf("cost for %s: got %.10f, want %.10f", haikuModel, got, wantHaiku)
+	}
+
+	// Verify no other models appeared.
+	for model := range costByModel {
+		if model != sonnetModel && model != haikuModel {
+			t.Errorf("unexpected model in output: %q", model)
+		}
+	}
+
+	// Verify resource attributes are preserved.
+	svcName, ok := outRM.Resource().Attributes().Get("service.name")
+	if !ok || svcName.AsString() != "claude-code" {
+		t.Errorf("expected resource service.name=claude-code, got %q (ok=%v)", svcName.AsString(), ok)
+	}
+}
+
+func abs(x float64) float64 {
+	if x < 0 {
+		return -x
+	}
+	return x
+}
+
 func createTestMetricsWithTokenType(userEmail, metricName, tokenType string, value float64) pmetric.Metrics {
 	md := pmetric.NewMetrics()
 	rm := md.ResourceMetrics().AppendEmpty()
