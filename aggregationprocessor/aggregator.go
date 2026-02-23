@@ -7,6 +7,7 @@ import (
 	"time"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
+	"go.uber.org/zap"
 )
 
 func isDebug() bool {
@@ -17,6 +18,23 @@ func debugLog(args ...any) {
 	if isDebug() {
 		fmt.Println(args...)
 	}
+}
+
+// redact masks a value for safe logging (e.g. "josh@example.com" -> "jo***@example.com")
+func redact(s string) string {
+	for i, c := range s {
+		if c == '@' {
+			if i > 2 {
+				return s[:2] + "***" + s[i:]
+			}
+			return "***" + s[i:]
+		}
+	}
+	// Not an email, mask all but first 2 chars
+	if len(s) > 2 {
+		return s[:2] + "***"
+	}
+	return "***"
 }
 
 // aggregationKey uniquely identifies a metric for aggregation
@@ -47,17 +65,27 @@ type MetricAggregator struct {
 	mu                  sync.RWMutex
 	aggregationInterval time.Duration
 	attributeKey        string
-	metrics map[aggregationKey]*aggregatedMetric
+	metrics             map[aggregationKey]*aggregatedMetric
+	logger              *zap.Logger
 }
 
 // NewMetricAggregator creates a new metric aggregator
-func NewMetricAggregator(attributeKey string, aggregationInterval time.Duration) *MetricAggregator {
+func NewMetricAggregator(attributeKey string, aggregationInterval time.Duration, logger *zap.Logger) *MetricAggregator {
 	return &MetricAggregator{
 		attributeKey:        attributeKey,
 		aggregationInterval: aggregationInterval,
 		metrics:             make(map[aggregationKey]*aggregatedMetric),
+		logger:              logger,
 	}
 }
+
+// maxFutureSkew is how far in the future a timestamp is allowed to be before it gets clamped.
+const maxFutureSkew = 5 * time.Minute
+
+// maxMetricEntries is the maximum number of entries allowed in the active metrics map.
+// This guards against unbounded growth from misbehaving clients sending high-cardinality
+// attribute values (e.g. random UUIDs instead of user emails).
+const maxMetricEntries = 10_000
 
 // AddMetrics adds metrics to the aggregation state
 func (ma *MetricAggregator) AddMetrics(md pmetric.Metrics) {
@@ -111,6 +139,11 @@ func (ma *MetricAggregator) processSum(sum pmetric.Sum, metricName string, resou
 		}
 
 		timestamp := dp.Timestamp().AsTime()
+		// Clamp future timestamps to now to prevent buckets that never complete.
+		if now := time.Now(); timestamp.After(now.Add(maxFutureSkew)) {
+			debugLog("DEBUG: Clamping future timestamp", timestamp, "to now for metric:", metricName)
+			timestamp = now
+		}
 		timeBucket := ma.getTimeBucket(timestamp)
 
 		dpAttrsKey := serializeAttributes(dp.Attributes())
@@ -124,6 +157,13 @@ func (ma *MetricAggregator) processSum(sum pmetric.Sum, metricName string, resou
 
 		agg, exists := ma.metrics[key]
 		if !exists {
+			if len(ma.metrics) >= maxMetricEntries {
+				ma.logger.Warn("metric map at capacity, dropping data point",
+					zap.String("metric_name", metricName),
+					zap.Int("limit", maxMetricEntries),
+				)
+				continue
+			}
 			agg = &aggregatedMetric{
 				key:            key,
 				metricType:     pmetric.MetricTypeSum,
@@ -172,6 +212,11 @@ func (ma *MetricAggregator) processGauge(gauge pmetric.Gauge, metricName string,
 		}
 
 		timestamp := dp.Timestamp().AsTime()
+		// Clamp future timestamps to now to prevent buckets that never complete.
+		if now := time.Now(); timestamp.After(now.Add(maxFutureSkew)) {
+			debugLog("DEBUG: Clamping future timestamp", timestamp, "to now for metric:", metricName)
+			timestamp = now
+		}
 		timeBucket := ma.getTimeBucket(timestamp)
 		dpAttrsKey := serializeAttributes(dp.Attributes())
 
@@ -184,6 +229,13 @@ func (ma *MetricAggregator) processGauge(gauge pmetric.Gauge, metricName string,
 
 		agg, exists := ma.metrics[key]
 		if !exists {
+			if len(ma.metrics) >= maxMetricEntries {
+				ma.logger.Warn("metric map at capacity, dropping data point",
+					zap.String("metric_name", metricName),
+					zap.Int("limit", maxMetricEntries),
+				)
+				continue
+			}
 			agg = &aggregatedMetric{
 				key:           key,
 				metricType:    pmetric.MetricTypeGauge,
@@ -228,15 +280,21 @@ func (ma *MetricAggregator) GetAndClearCompletedMetrics(now time.Time) pmetric.M
 	// DEBUG: Log checking for completed metrics
 	debugLog("DEBUG: GetAndClearCompletedMetrics - currentBucket:", currentBucket, "totalMetrics:", len(ma.metrics))
 
-	// Find all completed metrics (time buckets before current)
+	// Find all completed metrics (time buckets before current).
+	// We rebuild the active map rather than calling delete() on each key — this
+	// allows the GC to reclaim the backing array of the old map, avoiding the
+	// RSS oscillation that can falsely trigger the memory limiter.
 	completedMetrics := make(map[aggregationKey]*aggregatedMetric)
+	remaining := make(map[aggregationKey]*aggregatedMetric, len(ma.metrics))
 	for key, agg := range ma.metrics {
 		debugLog("DEBUG: Checking metric bucket:", key.timeBucket, "< currentBucket:", currentBucket, "?", key.timeBucket < currentBucket)
 		if key.timeBucket < currentBucket {
 			completedMetrics[key] = agg
-			delete(ma.metrics, key) // Remove from active state
+		} else {
+			remaining[key] = agg
 		}
 	}
+	ma.metrics = remaining
 
 	if len(completedMetrics) == 0 {
 		debugLog("DEBUG: No completed metrics found")
@@ -247,12 +305,21 @@ func (ma *MetricAggregator) GetAndClearCompletedMetrics(now time.Time) pmetric.M
 		debugLog("DEBUG: Found", len(completedMetrics), "completed metrics to emit:")
 		for key, agg := range completedMetrics {
 			debugLog(fmt.Sprintf("DEBUG:   -> %s{%s=%s} sum=%.4f count=%d bucket=%d",
-				key.metricName, ma.attributeKey, key.attributeValue, agg.sum, agg.count, key.timeBucket))
+				key.metricName, ma.attributeKey, redact(key.attributeValue), agg.sum, agg.count, key.timeBucket))
 		}
 	}
 
 	// Build the metrics output
 	rm := md.ResourceMetrics().AppendEmpty()
+
+	// Copy resource attributes from the first completed metric.
+	// All metrics in a session share the same resource (service.name, etc.),
+	// so using any one of them as the source is correct.
+	for _, agg := range completedMetrics {
+		agg.resourceAttrs.CopyTo(rm.Resource().Attributes())
+		break
+	}
+
 	sm := rm.ScopeMetrics().AppendEmpty()
 	sm.Scope().SetName("aggregationprocessor")
 
@@ -314,14 +381,19 @@ func (ma *MetricAggregator) getTimeBucket(t time.Time) int64 {
 	return t.Unix() / bucketSize * bucketSize
 }
 
-// formatAttributes formats attributes as a comma-separated label string for debug logging
+// formatAttributes formats attributes as a comma-separated label string for debug logging.
+// Values for keys containing "email" or "user" are redacted.
 func formatAttributes(attrs pcommon.Map) string {
 	result := ""
 	attrs.Range(func(k string, v pcommon.Value) bool {
 		if result != "" {
 			result += ", "
 		}
-		result += k + "=" + v.AsString()
+		val := v.AsString()
+		if k == "user.email" || k == "user.id" || k == "user.name" {
+			val = redact(val)
+		}
+		result += k + "=" + val
 		return true
 	})
 	return result

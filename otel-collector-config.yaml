@@ -10,7 +10,7 @@ processors:
   memory_limiter:
     check_interval: 1s
     limit_mib: 512
-    spike_limit_mib: 128
+    spike_limit_mib: 256
 
   # Aggregation processor - aggregates metrics by user email over time windows
   # Groups metrics by user.email attribute and sums values within each time window
@@ -41,7 +41,7 @@ exporters:
 extensions:
   health_check:
   pprof:
-    endpoint: 0.0.0.0:1777
+    endpoint: 127.0.0.1:1777
   zpages:
     endpoint: 0.0.0.0:55679
 
