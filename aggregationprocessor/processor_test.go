@@ -119,6 +119,9 @@ func TestAggregationProcessorEmission(t *testing.T) {
 
 	t.Logf("Emitted %d metric batches", len(allMetrics))
 
+	// Track aggregated values by user
+	userValues := make(map[string]float64)
+
 	// Verify aggregation
 	for _, md := range allMetrics {
 		if md.DataPointCount() == 0 {
@@ -127,11 +130,56 @@ func TestAggregationProcessorEmission(t *testing.T) {
 
 		t.Logf("Metric batch has %d data points", md.DataPointCount())
 
+		// Iterate through all data points to check user.email attribute and values
+		for i := 0; i < md.ResourceMetrics().Len(); i++ {
+			rm := md.ResourceMetrics().At(i)
+			for j := 0; j < rm.ScopeMetrics().Len(); j++ {
+				sm := rm.ScopeMetrics().At(j)
+				for k := 0; k < sm.Metrics().Len(); k++ {
+					metric := sm.Metrics().At(k)
+
+					// Check Sum metrics
+					if metric.Type() == pmetric.MetricTypeSum {
+						sum := metric.Sum()
+						for l := 0; l < sum.DataPoints().Len(); l++ {
+							dp := sum.DataPoints().At(l)
+
+							// Check if user.email attribute exists in data point
+							userEmail, found := dp.Attributes().Get("user.email")
+							if !found {
+								t.Errorf("Data point missing user.email attribute")
+								continue
+							}
+
+							email := userEmail.AsString()
+							value := dp.DoubleValue()
+							userValues[email] = value
+
+							t.Logf("Found data point: user=%s, value=%.2f", email, value)
+						}
+					}
+				}
+			}
+		}
+
 		// Should have aggregated alice's two metrics (10 + 5 = 15) and bob's one metric (7)
 		// Total of 2 data points expected
 		if md.DataPointCount() != 2 {
 			t.Errorf("Expected 2 aggregated data points, got %d", md.DataPointCount())
 		}
+	}
+
+	// Verify aggregated values
+	if aliceValue, ok := userValues["alice@example.com"]; !ok {
+		t.Errorf("Expected to find aggregated metric for alice@example.com, but didn't")
+	} else if aliceValue != 15.0 {
+		t.Errorf("Expected alice@example.com aggregated value to be 15.0, got %.2f", aliceValue)
+	}
+
+	if bobValue, ok := userValues["bob@example.com"]; !ok {
+		t.Errorf("Expected to find aggregated metric for bob@example.com, but didn't")
+	} else if bobValue != 7.0 {
+		t.Errorf("Expected bob@example.com aggregated value to be 7.0, got %.2f", bobValue)
 	}
 }
 
@@ -194,9 +242,6 @@ func createTestMetrics(userEmail, metricName string, value float64) pmetric.Metr
 	md := pmetric.NewMetrics()
 	rm := md.ResourceMetrics().AppendEmpty()
 
-	// Add resource attributes
-	rm.Resource().Attributes().PutStr("user.email", userEmail)
-
 	sm := rm.ScopeMetrics().AppendEmpty()
 	sm.Scope().SetName("test")
 
@@ -213,6 +258,7 @@ func createTestMetrics(userEmail, metricName string, value float64) pmetric.Metr
 	dp.SetDoubleValue(value)
 	dp.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
 	dp.SetStartTimestamp(pcommon.NewTimestampFromTime(time.Now().Add(-time.Minute)))
+	dp.Attributes().PutStr("user.email", userEmail)
 
 	return md
 }

@@ -103,7 +103,6 @@ func (ma *MetricAggregator) processSum(sum pmetric.Sum, metricName string, resou
 	for i := 0; i < sum.DataPoints().Len(); i++ {
 		dp := sum.DataPoints().At(i)
 
-		// Extract the attribute value from data point attributes
 		attributeValue, found := dp.Attributes().Get(ma.attributeKey)
 		if !found {
 			// Skip data points without the required attribute
@@ -165,7 +164,6 @@ func (ma *MetricAggregator) processGauge(gauge pmetric.Gauge, metricName string,
 	for i := 0; i < gauge.DataPoints().Len(); i++ {
 		dp := gauge.DataPoints().At(i)
 
-		// Extract the attribute value from data point attributes
 		attributeValue, found := dp.Attributes().Get(ma.attributeKey)
 		if !found {
 			// Skip data points without the required attribute

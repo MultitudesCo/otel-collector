@@ -4,9 +4,6 @@
 # Build artifacts
 dist/
 
-# Go build artifacts
-aggregationprocessor/go.sum
-
 # Docker volumes
 data/
 
