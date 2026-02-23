@@ -291,6 +291,15 @@ func (ma *MetricAggregator) GetAndClearCompletedMetrics(now time.Time) pmetric.M
 
 	// Build the metrics output
 	rm := md.ResourceMetrics().AppendEmpty()
+
+	// Copy resource attributes from the first completed metric.
+	// All metrics in a session share the same resource (service.name, etc.),
+	// so using any one of them as the source is correct.
+	for _, agg := range completedMetrics {
+		agg.resourceAttrs.CopyTo(rm.Resource().Attributes())
+		break
+	}
+
 	sm := rm.ScopeMetrics().AppendEmpty()
 	sm.Scope().SetName("aggregationprocessor")
 

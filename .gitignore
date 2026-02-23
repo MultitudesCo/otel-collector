@@ -6,6 +6,7 @@ dist/
 
 # Go build artifacts
 aggregationprocessor/go.sum
+aggregationprocessor/coverage.out
 
 # Docker volumes
 data/
