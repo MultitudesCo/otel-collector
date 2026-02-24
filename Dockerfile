@@ -28,13 +28,13 @@ COPY --from=builder /build/dist/otelcol-multitudes /otelcol-multitudes
 # For local development, docker-compose will volume mount otel-collector-config.local.yaml
 COPY otel-collector-config.yaml /etc/otelcol-contrib/otel-collector-config.yaml
 
+
 # Expose ports
 # 4317: OTLP gRPC
 # 4318: OTLP HTTP
 # 55679: zPages diagnostics
 # 13133: Health check
 EXPOSE 4317 4318 55679 13133
-
 
 # Default command (can be overridden in docker-compose or ECS)
 ENTRYPOINT ["/otelcol-multitudes"]
