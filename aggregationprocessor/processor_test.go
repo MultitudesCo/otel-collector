@@ -17,17 +17,14 @@ import (
 )
 
 func TestAggregationProcessor(t *testing.T) {
-	// Create a sink to capture output
 	sink := &consumertest.MetricsSink{}
 
-	// Create processor config
 	cfg := &Config{
 		AttributeKey:        "user.email",
 		AggregationInterval: time.Hour,
 		EmitInterval:        time.Second,
 	}
 
-	// Create processor
 	factory := NewFactory()
 	set := processortest.NewNopSettings()
 	processor, err := factory.CreateMetrics(
@@ -40,18 +37,15 @@ func TestAggregationProcessor(t *testing.T) {
 		t.Fatalf("Failed to create processor: %v", err)
 	}
 
-	// Start the processor
 	if err := processor.Start(context.Background(), componenttest.NewNopHost()); err != nil {
 		t.Fatalf("Failed to start processor: %v", err)
 	}
 	defer processor.Shutdown(context.Background())
 
-	// Create test metrics
 	md1 := createTestMetrics("alice@example.com", "test.metric", 10.0)
 	md2 := createTestMetrics("alice@example.com", "test.metric", 5.0)
 	md3 := createTestMetrics("bob@example.com", "test.metric", 7.0)
 
-	// Send metrics to processor
 	if err := processor.ConsumeMetrics(context.Background(), md1); err != nil {
 		t.Fatalf("Failed to consume metrics: %v", err)
 	}
@@ -62,10 +56,8 @@ func TestAggregationProcessor(t *testing.T) {
 		t.Fatalf("Failed to consume metrics: %v", err)
 	}
 
-	// Wait for emission (this test uses small intervals for testing)
 	time.Sleep(2 * time.Second)
 
-	// Since we're in the current time bucket, nothing should be emitted yet
 	if len(sink.AllMetrics()) > 0 {
 		t.Logf("Note: Metrics emitted during current bucket (expected if time bucket rolled over)")
 	}
@@ -112,10 +104,8 @@ func TestAggregationProcessorEmission(t *testing.T) {
 		t.Fatalf("Failed to consume metrics: %v", err)
 	}
 
-	// Wait for the time bucket to complete and metrics to be emitted
 	time.Sleep(1500 * time.Millisecond)
 
-	// Check that metrics were emitted
 	allMetrics := sink.AllMetrics()
 	if len(allMetrics) == 0 {
 		t.Fatal("Expected metrics to be emitted, but got none")
@@ -123,10 +113,8 @@ func TestAggregationProcessorEmission(t *testing.T) {
 
 	t.Logf("Emitted %d metric batches", len(allMetrics))
 
-	// Track aggregated values by user
 	userValues := make(map[string]float64)
 
-	// Verify aggregation
 	for _, md := range allMetrics {
 		if md.DataPointCount() == 0 {
 			continue
@@ -173,7 +161,6 @@ func TestAggregationProcessorEmission(t *testing.T) {
 		}
 	}
 
-	// Verify aggregated values
 	if aliceValue, ok := userValues["alice@example.com"]; !ok {
 		t.Errorf("Expected to find aggregated metric for alice@example.com, but didn't")
 	} else if aliceValue != 15.0 {
@@ -319,7 +306,7 @@ func TestTokenTypeAggregation(t *testing.T) {
 		value     float64
 	}{
 		{"input", 100},
-		{"input", 50},   // second input — should be summed with first
+		{"input", 50}, // second input — should be summed with first
 		{"output", 200},
 		{"cache_read", 300},
 		{"cache_write", 400},
@@ -737,10 +724,6 @@ func addSumMetric(sm pmetric.ScopeMetrics, metricName, userEmail string, value f
 	dp.Attributes().PutStr("user.email", userEmail)
 }
 
-// ---------------------------------------------------------------------------
-// Critical gap tests
-// ---------------------------------------------------------------------------
-
 // TestGetTimeBucketBoundaries directly tests the bucket calculation logic.
 // The formula is: bucket = (unix / bucketSize) * bucketSize
 // so a timestamp exactly ON a boundary belongs to that bucket, not the next.
@@ -763,7 +746,7 @@ func TestGetTimeBucketBoundaries(t *testing.T) {
 	// Pick a reference time that lands on a clean bucket boundary.
 	now := time.Now()
 	nowUnix := now.Unix()
-	boundaryUnix := (nowUnix/bucketSize)*bucketSize // floor to bucket
+	boundaryUnix := (nowUnix / bucketSize) * bucketSize // floor to bucket
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -784,12 +767,12 @@ func TestGetTimeBucketDifferentIntervals(t *testing.T) {
 	ts := time.Unix(3661, 0) // 1h 1m 1s past epoch
 
 	cases := []struct {
-		interval    time.Duration
-		wantBucket  int64
+		interval   time.Duration
+		wantBucket int64
 	}{
-		{time.Second, 3661},    // every second — bucket is the second itself
-		{time.Minute, 3660},    // every minute — 61st minute starts at 3660
-		{time.Hour, 3600},      // every hour   — 2nd hour starts at 3600
+		{time.Second, 3661}, // every second — bucket is the second itself
+		{time.Minute, 3660}, // every minute — 61st minute starts at 3660
+		{time.Hour, 3600},   // every hour   — 2nd hour starts at 3600
 	}
 
 	for _, tc := range cases {
@@ -843,7 +826,7 @@ func TestMetricsInAdjacentBucketsAreKeptSeparate(t *testing.T) {
 	boundary := time.Unix((now.Unix()/bucketSize)*bucketSize, 0)
 
 	// One data point in the bucket before the boundary, one in the bucket before that
-	t1 := boundary.Add(-1 * time.Second)                          // bucket N-1
+	t1 := boundary.Add(-1 * time.Second)                           // bucket N-1
 	t2 := boundary.Add(-time.Duration(bucketSize)*time.Second - 1) // bucket N-2
 
 	agg.AddMetrics(createTestMetricsWithTimestamp("alice@example.com", "m", 10.0, t1))
@@ -1006,7 +989,6 @@ func TestShutdownEmitsRemainingMetrics(t *testing.T) {
 // TestResourceAttributesPreservedInOutput verifies that resource-level
 // attributes (e.g. service.name) are copied through to the emitted metrics.
 func TestResourceAttributesPreservedInOutput(t *testing.T) {
-
 	agg := NewMetricAggregator("user.email", time.Second, zap.NewNop())
 
 	pastTime := time.Now().Add(-2 * time.Second)
@@ -1035,7 +1017,7 @@ func TestResourceAttributesPreservedInOutput(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// End-to-end test with real Claude Code payloads
+// End-to-end tests
 // ---------------------------------------------------------------------------
 
 // TestClaudeCodeCostAggregationByModel feeds three realistic Claude Code OTLP
@@ -1054,13 +1036,13 @@ func TestResourceAttributesPreservedInOutput(t *testing.T) {
 //	claude-haiku-4-5-20251001 = 0.000596 + 0.01890945 + 0.000395 = 0.02000045
 func TestClaudeCodeCostAggregationByModel(t *testing.T) {
 	const (
-		userEmail    = "josh@multitudes.com"
-		userID       = "965ad35a5b2f698e232309acb17e0fcac9efaa0f056bc4978dcaf942ead57896"
-		sessionID    = "7394d3a1-b1a5-4ec0-a258-ef1d01643dfa"
-		orgID        = "8385b83e-c151-4d79-a68b-eb9e4aab27ca"
-		accountUUID  = "b79238a2-c9ad-4bf3-96eb-8206a81f9a1c"
-		sonnetModel  = "claude-sonnet-4-6"
-		haikuModel   = "claude-haiku-4-5-20251001"
+		userEmail   = "josh@multitudes.com"
+		userID      = "965ad35a5b2f698e232309acb17e0fcac9efaa0f056bc4978dcaf942ead57896"
+		sessionID   = "7394d3a1-b1a5-4ec0-a258-ef1d01643dfa"
+		orgID       = "8385b83e-c151-4d79-a68b-eb9e4aab27ca"
+		accountUUID = "b79238a2-c9ad-4bf3-96eb-8206a81f9a1c"
+		sonnetModel = "claude-sonnet-4-6"
+		haikuModel  = "claude-haiku-4-5-20251001"
 	)
 
 	// Helper to build resource attributes matching the real Claude Code payload.
@@ -1124,7 +1106,7 @@ func TestClaudeCodeCostAggregationByModel(t *testing.T) {
 	}
 
 	// Use a past timestamp so all data points land in a completed bucket.
-	pastNs := uint64(time.Now().Add(-2*time.Minute).UnixNano())
+	pastNs := uint64(time.Now().Add(-2 * time.Minute).UnixNano())
 
 	payload1 := buildCostPayload(0.039065, 0.000596, pastNs, pastNs, pastNs, pastNs)
 	payload2 := buildCostPayload(0.019894, 0.01890945, pastNs, pastNs, pastNs, pastNs)
@@ -1158,8 +1140,8 @@ func TestClaudeCodeCostAggregationByModel(t *testing.T) {
 
 	const epsilon = 1e-9
 
-	wantSonnet := 0.039065 + 0.019894 + 0.02016125   // 0.07912025
-	wantHaiku := 0.000596 + 0.01890945 + 0.000395    // 0.02000045
+	wantSonnet := 0.039065 + 0.019894 + 0.02016125 // 0.07912025
+	wantHaiku := 0.000596 + 0.01890945 + 0.000395  // 0.02000045
 
 	if got := costByModel[sonnetModel]; abs(got-wantSonnet) > epsilon {
 		t.Errorf("cost for %s: got %.10f, want %.10f", sonnetModel, got, wantSonnet)
