@@ -26,7 +26,7 @@ func newAggregationProcessor(
 ) (*aggregationProcessor, error) {
 	logger := set.Logger
 
-	aggregator := NewMetricAggregator(cfg.AttributeKey, cfg.AggregationInterval)
+	aggregator := NewMetricAggregator(cfg.AttributeKey, cfg.AggregationInterval, logger)
 
 	ap := &aggregationProcessor{
 		logger:       logger,
