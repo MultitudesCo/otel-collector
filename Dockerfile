@@ -35,6 +35,7 @@ COPY otel-collector-config.yaml /etc/otelcol-contrib/otel-collector-config.yaml
 # 13133: Health check
 EXPOSE 4317 4318 55679 13133
 
+
 # Default command (can be overridden in docker-compose or ECS)
 ENTRYPOINT ["/otelcol-multitudes"]
 CMD ["--config=/etc/otelcol-contrib/otel-collector-config.yaml"]
