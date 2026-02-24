@@ -16,24 +16,16 @@ Tools like Claude Code emit raw OTLP metrics as engineers work. The Multitudes O
 ## Prerequisites
 
 - [Docker](https://docs.docker.com/get-docker/)
-- A Multitudes Integration token (generated from within the Multitudes app)
+- A Multitudes Integration token (generated from within the Multitudes app; [documentaion on how to do that here](https://docs.multitudes.com/integrations/deployments-api#auth))
 
-## Quick start (Docker)
+## Quick start
 
-**1. Clone this repository**
-
-```bash
-git clone https://github.com/multitudesco/otel-collector.git
-cd otel-collector
-```
-
-**2. Build the collector image**
+**1. Pull the image**
 
 ```bash
-docker build -t otelcol-multitudes:latest .
+docker pull ghcr.io/multitudesco/otel-collector:latest
 ```
-
-**3. Run the collector**
+**2. Run the collector**
 
 ```bash
 docker run -d \
@@ -77,6 +69,22 @@ Once the collector is running as a deployed service, replace `http://localhost:4
 
 ### Logging in
 Each person sending Otel metrics should be logged in using their work email. This allows Multitudes to correctly match the incoming metrics to users in Multitudes. 
+
+## Building the image locally
+If you would prefer to build the image locally instead of pulling from the Github Container Registry: 
+
+**1. Clone this repository**
+
+```bash
+git clone https://github.com/multitudesco/otel-collector.git
+cd otel-collector
+```
+
+**2. Build the collector image**
+
+```bash
+docker build -t otelcol-multitudes:latest .
+```
 
 ## Repository structure
 
