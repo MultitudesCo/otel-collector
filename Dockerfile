@@ -19,6 +19,7 @@ FROM alpine:3.19
 # Install ca-certificates for HTTPS and bash for startup script
 RUN apk --no-cache add ca-certificates bash
 
+
 WORKDIR /
 
 # Copy the custom collector binary from builder
