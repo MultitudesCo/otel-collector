@@ -19,8 +19,6 @@ const (
 	defaultEmitInterval        = time.Minute
 )
 
-var processorCapabilities = consumer.Capabilities{MutatesData: false}
-
 // NewFactory returns a new factory for the aggregation processor.
 func NewFactory() processor.Factory {
 	return processor.NewFactory(
