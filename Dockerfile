@@ -1,5 +1,5 @@
 # Build stage - compile custom collector with aggregation processor
-FROM golang:1.23 AS builder
+FROM golang:1.26 AS builder
 
 # Install OpenTelemetry Collector Builder
 RUN go install go.opentelemetry.io/collector/cmd/builder@v0.115.0
