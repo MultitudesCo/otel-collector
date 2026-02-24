@@ -5,6 +5,7 @@ import (
 	"os"
 	"sync"
 	"time"
+
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.uber.org/zap"
@@ -41,8 +42,8 @@ func redact(s string) string {
 type aggregationKey struct {
 	attributeValue string // e.g., user email
 	metricName     string
-	timeBucket     int64 // Unix timestamp of bucket start
-	dpAttributes string // Serialized data point attributes
+	timeBucket     int64  // Unix timestamp of bucket start
+	dpAttributes   string // Serialized data point attributes
 }
 
 // aggregatedMetric holds accumulated metric data
@@ -83,8 +84,8 @@ func NewMetricAggregator(attributeKey string, aggregationInterval time.Duration,
 const maxFutureSkew = 5 * time.Minute
 
 // maxMetricEntries is the maximum number of entries allowed in the active metrics map.
-// This guards against unbounded growth from misbehaving clients sending high-cardinality
-// attribute values (e.g. random UUIDs instead of user emails).
+// This guards against unbounded growth from misconfigured client sending high-cardinality
+// attribute values (e.g. UUIDs instead of email).
 const maxMetricEntries = 10_000
 
 // AddMetrics adds metrics to the aggregation state
