@@ -19,6 +19,7 @@ FROM alpine:3.19
 # Install ca-certificates for HTTPS and bash for startup script
 RUN apk --no-cache add ca-certificates bash
 
+
 WORKDIR /
 
 # Copy the custom collector binary from builder
@@ -27,6 +28,7 @@ COPY --from=builder /build/dist/otelcol-multitudes /otelcol-multitudes
 # Copy the production collector configuration
 # For local development, docker-compose will volume mount otel-collector-config.local.yaml
 COPY otel-collector-config.yaml /etc/otelcol-contrib/otel-collector-config.yaml
+
 
 # Expose ports
 # 4317: OTLP gRPC
