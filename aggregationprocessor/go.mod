@@ -1,6 +1,6 @@
 module github.com/multitudes/otel-collector/aggregationprocessor
 
-go 1.23
+go 1.26
 
 require (
 	go.opentelemetry.io/collector/component v0.115.0
