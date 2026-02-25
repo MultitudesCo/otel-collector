@@ -59,7 +59,6 @@ Each person using Claude Code should enable exporting metrics to the OTLP endpoi
     "OTEL_LOGS_EXPORTER": "otlp",
     "OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",
     "OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4318",
-    "OTEL_METRIC_EXPORT_INTERVAL": "10000"
   },
 }
 
