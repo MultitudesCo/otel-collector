@@ -67,6 +67,15 @@ Each person using Claude Code should enable exporting metrics to the OTLP endpoi
 
 Once the collector is running as a deployed service, replace `http://localhost:4318` with the endpoint that the deployed collector exposes.
 
+### Using server-managed settings files
+
+Rather than needing each user to manually configure a settings.json file, these can be centrally managed in a nunber of ways. 
+
+Refer to the Claude Code documentation for more: 
+* [Settings files](https://code.claude.com/docs/en/settings#settings-files)
+* [Server-managed settings](https://code.claude.com/docs/en/server-managed-settings)
+
+
 ### Logging in
 Each person sending Otel metrics should be logged in using their work email. This allows Multitudes to correctly match the incoming metrics to users in Multitudes. 
 
