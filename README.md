@@ -16,7 +16,7 @@ Tools like Claude Code emit raw OTLP metrics as engineers work. The Multitudes O
 ## Prerequisites
 
 - [Docker](https://docs.docker.com/get-docker/)
-- A Multitudes Integration token (generated from within the Multitudes app; [documentaion on how to do that here](https://docs.multitudes.com/integrations/deployments-api#auth))
+- A Multitudes Integration token (generated from within the Multitudes app; [documentation on how to do that here](https://docs.multitudes.com/integrations/deployments-api#auth))
 
 ## Quick start
 
@@ -25,6 +25,7 @@ Tools like Claude Code emit raw OTLP metrics as engineers work. The Multitudes O
 ```bash
 docker pull ghcr.io/multitudesco/otel-collector:latest
 ```
+
 **2. Run the collector**
 
 ```bash
@@ -37,7 +38,7 @@ docker run -d \
   -p 127.0.0.1:4317:4317 \
   -p 127.0.0.1:4318:4318 \
   -p 127.0.0.1:13133:13133 \
-  otelcol-multitudes:latest
+  ghcr.io/multitudesco/otel-collector:latest
 
 # To disable verbose debug logging in production, omit the line above:
 #   -e MULTITUDES_DEBUG=1 \
@@ -47,11 +48,13 @@ The collector is now running and listening for OTLP metrics on:
 - `localhost:4317` — gRPC
 - `localhost:4318` — HTTP
 
-## Configuring your AI tools
+**3. Configure your AI tools**
 
-Each person using Claude Code should enable exporting metrics to the OTLP endpoint. This can be done by configuring a `~/.claude/settings.json` file. This example exports OTLP metrics to the localhost endpoint exposed by the collector running in the Docker container:
+Each person using Claude Code should enable exporting metrics to the OTLP endpoint. This can be done by configuring a `~/.claude/settings.json` file.
 
-```bash
+For a local setup (collector running on the same machine), use `http://localhost:4318` as the endpoint:
+
+```json
 {
   "env": {
     "CLAUDE_CODE_ENABLE_TELEMETRY": "1",
@@ -60,27 +63,37 @@ Each person using Claude Code should enable exporting metrics to the OTLP endpoi
     "OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",
     "OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4318",
     "OTEL_METRIC_EXPORT_INTERVAL": "10000"
-  },
+  }
 }
-
 ```
 
-Once the collector is running as a deployed service, replace `http://localhost:4318` with the endpoint that the deployed collector exposes.
+If the collector is deployed as a shared service (e.g. on ECS or another host), replace `http://localhost:4318` with the hostname and port where that service is reachable, for example, `http://collector.internal:4318`.
+
+**4. Validate the collector is working**
+
+To confirm the collector is running and receiving metrics, tail its logs using the Docker CLI:
+
+```bash
+docker logs -f multitudes-otel-collector
+```
+
+You should see log output indicating the collector is active. Once Claude Code sessions are underway, you will see incoming metric lines appear in the log stream. If no metrics appear, double-check that `settings.json` is saved correctly and that the `OTEL_EXPORTER_OTLP_ENDPOINT` value matches the address the collector is listening on.
 
 ### Using server-managed settings files
 
-Rather than needing each user to manually configure a settings.json file, these can be centrally managed in a nunber of ways. 
+Rather than needing each user to manually configure a settings.json file, these can be centrally managed in a number of ways.
 
-Refer to the Claude Code documentation for more: 
+Refer to the Claude Code documentation for more:
 * [Settings files](https://code.claude.com/docs/en/settings#settings-files)
 * [Server-managed settings](https://code.claude.com/docs/en/server-managed-settings)
 
-
 ### Logging in
-Each person sending Otel metrics should be logged in using their work email. This allows Multitudes to correctly match the incoming metrics to users in Multitudes. 
+
+Each person sending OTel metrics should be logged in using their work email. This allows Multitudes to correctly match the incoming metrics to users in Multitudes.
 
 ## Building the image locally
-If you would prefer to build the image locally instead of pulling from the Github Container Registry: 
+
+If you would prefer to build the image locally instead of pulling from the GitHub Container Registry:
 
 **1. Clone this repository**
 
@@ -129,7 +142,6 @@ The collector aggregates metrics by `user.email` over a 5 minute window before s
 
 The aggregation window and other settings can be adjusted in `otel-collector-config.yaml`.
 
-
 ## Ports
 
 | Port | Protocol | Purpose |
@@ -139,11 +151,11 @@ The aggregation window and other settings can be adjusted in `otel-collector-con
 | `13133` | HTTP | Health check (`/health`) |
 | `55679` | HTTP | zPages diagnostics |
 
-## Deployment 
+## Deployment
 
-Deploy the collector onto your infrastructure and expose the required ports for Claude Code users to export metrics to. 
+Deploy the collector onto your infrastructure and expose the required ports for Claude Code users to export metrics to.
 
-Specific configuration guides for common deployment patterns like ECS Fargate will be coming soon. 
+Specific configuration guides for common deployment patterns like ECS Fargate will be coming soon.
 
 ## Support
 
