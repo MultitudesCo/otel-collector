@@ -79,6 +79,14 @@ docker logs -f multitudes-otel-collector
 
 You should see log output indicating the collector is active. Once Claude Code sessions are underway, you will see incoming metric lines appear in the log stream. If no metrics appear, double-check that `settings.json` is saved correctly and that the `OTEL_EXPORTER_OTLP_ENDPOINT` value matches the address the collector is listening on.
 
+If you see warning lines like the following in the logs, it means incoming metrics are being dropped because they do not include a `user.email` attribute:
+
+```
+Warn  dropping data point: required attribute not found  {"attribute_key": "user.email", "metric_name": "claude_code.cost.usage"}
+```
+
+The most common cause is that users are not logged in to Claude Code with their work email. Ensure each person has authenticated with `claude login` using their work email address before sending metrics. See [Logging in](#logging-in) below.
+
 ### Using server-managed settings files
 
 Rather than needing each user to manually configure a settings.json file, these can be centrally managed in a number of ways.
@@ -105,7 +113,7 @@ cd otel-collector
 **2. Build the collector image**
 
 ```bash
-docker build -t otelcol-multitudes:latest .
+docker build -t ghcr.io/multitudesco/otel-collector:latest .
 ```
 
 ## Repository structure
