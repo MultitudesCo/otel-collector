@@ -127,20 +127,36 @@ func (ma *MetricAggregator) processMetric(metric pmetric.Metric, resourceAttrs p
 	}
 }
 
+// resolveAttributeValue looks up ma.attributeKey on the data point attributes first,
+// then falls back to resource attributes. Returns the value and whether it was found.
+func (ma *MetricAggregator) resolveAttributeValue(dpAttrs pcommon.Map, resourceAttrs pcommon.Map, metricName string) (pcommon.Value, bool) {
+	if v, ok := dpAttrs.Get(ma.attributeKey); ok {
+		debugLog("DEBUG: Found", ma.attributeKey, "on data point attributes for metric:", metricName, "value:", redact(v.AsString()))
+		return v, true
+	}
+	if v, ok := resourceAttrs.Get(ma.attributeKey); ok {
+		debugLog("DEBUG: Found", ma.attributeKey, "on resource attributes (not data point) for metric:", metricName, "value:", redact(v.AsString()))
+		return v, true
+	}
+	return pcommon.Value{}, false
+}
+
+// dpFloat extracts the float64 value from a data point regardless of its stored type.
+func dpFloat(dp pmetric.NumberDataPoint) float64 {
+	switch dp.ValueType() {
+	case pmetric.NumberDataPointValueTypeInt:
+		return float64(dp.IntValue())
+	default:
+		return dp.DoubleValue()
+	}
+}
+
 // processSum processes sum metrics
 func (ma *MetricAggregator) processSum(sum pmetric.Sum, metricName string, resourceAttrs pcommon.Map, unit, description string) {
 	for i := 0; i < sum.DataPoints().Len(); i++ {
 		dp := sum.DataPoints().At(i)
 
-		attributeValue, found := dp.Attributes().Get(ma.attributeKey)
-		if !found {
-			attributeValue, found = resourceAttrs.Get(ma.attributeKey)
-			if found {
-				debugLog("DEBUG: Found", ma.attributeKey, "on resource attributes (not data point) for metric:", metricName, "value:", redact(attributeValue.AsString()))
-			}
-		} else {
-			debugLog("DEBUG: Found", ma.attributeKey, "on data point attributes for metric:", metricName, "value:", redact(attributeValue.AsString()))
-		}
+		attributeValue, found := ma.resolveAttributeValue(dp.Attributes(), resourceAttrs, metricName)
 		if !found {
 			ma.logger.Warn("dropping data point: required attribute not found",
 				zap.String("attribute_key", ma.attributeKey),
@@ -195,14 +211,7 @@ func (ma *MetricAggregator) processSum(sum pmetric.Sum, metricName string, resou
 			ma.metrics[key] = agg
 		}
 
-		// Accumulate value
-		var dpValue float64
-		switch dp.ValueType() {
-		case pmetric.NumberDataPointValueTypeDouble:
-			dpValue = dp.DoubleValue()
-		case pmetric.NumberDataPointValueTypeInt:
-			dpValue = float64(dp.IntValue())
-		}
+		dpValue := dpFloat(dp)
 		agg.sum += dpValue
 
 		agg.count++
@@ -220,15 +229,7 @@ func (ma *MetricAggregator) processGauge(gauge pmetric.Gauge, metricName string,
 	for i := 0; i < gauge.DataPoints().Len(); i++ {
 		dp := gauge.DataPoints().At(i)
 
-		attributeValue, found := dp.Attributes().Get(ma.attributeKey)
-		if !found {
-			attributeValue, found = resourceAttrs.Get(ma.attributeKey)
-			if found {
-				debugLog("DEBUG: Found", ma.attributeKey, "on resource attributes (not data point) for metric:", metricName, "value:", redact(attributeValue.AsString()))
-			}
-		} else {
-			debugLog("DEBUG: Found", ma.attributeKey, "on data point attributes for metric:", metricName, "value:", redact(attributeValue.AsString()))
-		}
+		attributeValue, found := ma.resolveAttributeValue(dp.Attributes(), resourceAttrs, metricName)
 		if !found {
 			ma.logger.Warn("dropping data point: required attribute not found",
 				zap.String("attribute_key", ma.attributeKey),
@@ -281,13 +282,7 @@ func (ma *MetricAggregator) processGauge(gauge pmetric.Gauge, metricName string,
 		}
 
 		// For gauges, we sum the values (could also use last value, max, min, etc.)
-		var dpValue float64
-		switch dp.ValueType() {
-		case pmetric.NumberDataPointValueTypeDouble:
-			dpValue = dp.DoubleValue()
-		case pmetric.NumberDataPointValueTypeInt:
-			dpValue = float64(dp.IntValue())
-		}
+		dpValue := dpFloat(dp)
 		agg.sum += dpValue
 
 		agg.count++

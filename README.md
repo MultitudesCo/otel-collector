@@ -113,7 +113,7 @@ cd otel-collector
 **2. Build the collector image**
 
 ```bash
-docker build -t otelcol-multitudes:latest .
+docker build -t ghcr.io/multitudesco/otel-collector:latest .
 ```
 
 ## Repository structure
