@@ -42,9 +42,9 @@ func TestAggregationProcessor(t *testing.T) {
 	}
 	defer processor.Shutdown(context.Background())
 
-	md1 := createTestMetrics("alice@example.com", "test.metric", 10.0)
-	md2 := createTestMetrics("alice@example.com", "test.metric", 5.0)
-	md3 := createTestMetrics("bob@example.com", "test.metric", 7.0)
+	md1 := createTestMetrics("test@test.com", "test.metric", 10.0)
+	md2 := createTestMetrics("test@test.com", "test.metric", 5.0)
+	md3 := createTestMetrics("test2@test.com", "test.metric", 7.0)
 
 	if err := processor.ConsumeMetrics(context.Background(), md1); err != nil {
 		t.Fatalf("Failed to consume metrics: %v", err)
@@ -90,9 +90,9 @@ func TestAggregationProcessorEmission(t *testing.T) {
 	defer processor.Shutdown(context.Background())
 
 	// Send metrics
-	md1 := createTestMetrics("alice@example.com", "test.cost", 10.0)
-	md2 := createTestMetrics("alice@example.com", "test.cost", 5.0)
-	md3 := createTestMetrics("bob@example.com", "test.cost", 7.0)
+	md1 := createTestMetrics("test@test.com", "test.cost", 10.0)
+	md2 := createTestMetrics("test@test.com", "test.cost", 5.0)
+	md3 := createTestMetrics("test2@test.com", "test.cost", 7.0)
 
 	if err := processor.ConsumeMetrics(context.Background(), md1); err != nil {
 		t.Fatalf("Failed to consume metrics: %v", err)
@@ -161,16 +161,16 @@ func TestAggregationProcessorEmission(t *testing.T) {
 		}
 	}
 
-	if aliceValue, ok := userValues["alice@example.com"]; !ok {
-		t.Errorf("Expected to find aggregated metric for alice@example.com, but didn't")
+	if aliceValue, ok := userValues["test@test.com"]; !ok {
+		t.Errorf("Expected to find aggregated metric for test@test.com, but didn't")
 	} else if aliceValue != 15.0 {
-		t.Errorf("Expected alice@example.com aggregated value to be 15.0, got %.2f", aliceValue)
+		t.Errorf("Expected test@test.com aggregated value to be 15.0, got %.2f", aliceValue)
 	}
 
-	if bobValue, ok := userValues["bob@example.com"]; !ok {
-		t.Errorf("Expected to find aggregated metric for bob@example.com, but didn't")
+	if bobValue, ok := userValues["test2@test.com"]; !ok {
+		t.Errorf("Expected to find aggregated metric for test2@test.com, but didn't")
 	} else if bobValue != 7.0 {
-		t.Errorf("Expected bob@example.com aggregated value to be 7.0, got %.2f", bobValue)
+		t.Errorf("Expected test2@test.com aggregated value to be 7.0, got %.2f", bobValue)
 	}
 }
 
@@ -243,7 +243,7 @@ func TestFutureTimestampClamping(t *testing.T) {
 	agg := NewMetricAggregator("user.email", 5*time.Minute, zap.NewNop())
 
 	futureTime := time.Now().Add(24 * time.Hour)
-	md := createTestMetricsWithTimestamp("alice@example.com", "test.metric", 10.0, futureTime)
+	md := createTestMetricsWithTimestamp("test@test.com", "test.metric", 10.0, futureTime)
 	agg.AddMetrics(md)
 
 	// The bucket should have been clamped to now, so it should complete on the next tick
@@ -262,7 +262,7 @@ func TestFutureTimestampWithinSkewAllowed(t *testing.T) {
 
 	// 2 minutes in the future — within maxFutureSkew, should not be clamped
 	nearFuture := time.Now().Add(2 * time.Minute)
-	md := createTestMetricsWithTimestamp("alice@example.com", "test.metric", 10.0, nearFuture)
+	md := createTestMetricsWithTimestamp("test@test.com", "test.metric", 10.0, nearFuture)
 	agg.AddMetrics(md)
 
 	if len(agg.metrics) == 0 {
@@ -277,7 +277,7 @@ func TestMapReplacementAfterClear(t *testing.T) {
 
 	// Add a metric in a past bucket
 	pastTime := time.Now().Add(-2 * time.Second)
-	md := createTestMetricsWithTimestamp("alice@example.com", "test.metric", 10.0, pastTime)
+	md := createTestMetricsWithTimestamp("test@test.com", "test.metric", 10.0, pastTime)
 	agg.AddMetrics(md)
 
 	if len(agg.metrics) == 0 {
@@ -313,7 +313,7 @@ func TestTokenTypeAggregation(t *testing.T) {
 	}
 
 	for _, tc := range types {
-		md := createTestMetricsWithTokenType("alice@example.com", "claude_code.token.usage", tc.tokenType, tc.value)
+		md := createTestMetricsWithTokenType("test@test.com", "claude_code.token.usage", tc.tokenType, tc.value)
 		// Override timestamp to past bucket
 		rm := md.ResourceMetrics().At(0)
 		dp := rm.ScopeMetrics().At(0).Metrics().At(0).Sum().DataPoints().At(0)
@@ -405,9 +405,9 @@ func TestGaugeAggregation(t *testing.T) {
 
 	pastTime := time.Now().Add(-2 * time.Second)
 
-	agg.AddMetrics(createTestGaugeMetrics("alice@example.com", "test.gauge", 10.0, pastTime))
-	agg.AddMetrics(createTestGaugeMetrics("alice@example.com", "test.gauge", 5.0, pastTime))
-	agg.AddMetrics(createTestGaugeMetrics("bob@example.com", "test.gauge", 7.0, pastTime))
+	agg.AddMetrics(createTestGaugeMetrics("test@test.com", "test.gauge", 10.0, pastTime))
+	agg.AddMetrics(createTestGaugeMetrics("test@test.com", "test.gauge", 5.0, pastTime))
+	agg.AddMetrics(createTestGaugeMetrics("test2@test.com", "test.gauge", 7.0, pastTime))
 
 	completed := agg.GetAndClearCompletedMetrics(time.Now())
 
@@ -424,11 +424,11 @@ func TestGaugeAggregation(t *testing.T) {
 		emitted[email.AsString()] = dp.DoubleValue()
 	}
 
-	if emitted["alice@example.com"] != 15.0 {
-		t.Errorf("Expected alice sum=15, got %.1f", emitted["alice@example.com"])
+	if emitted["test@test.com"] != 15.0 {
+		t.Errorf("Expected alice sum=15, got %.1f", emitted["test@test.com"])
 	}
-	if emitted["bob@example.com"] != 7.0 {
-		t.Errorf("Expected bob sum=7, got %.1f", emitted["bob@example.com"])
+	if emitted["test2@test.com"] != 7.0 {
+		t.Errorf("Expected bob sum=7, got %.1f", emitted["test2@test.com"])
 	}
 }
 
@@ -443,7 +443,7 @@ func TestConcurrentAccess(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for j := 0; j < 100; j++ {
-				agg.AddMetrics(createTestMetrics("alice@example.com", "test.metric", 1.0))
+				agg.AddMetrics(createTestMetrics("test@test.com", "test.metric", 1.0))
 			}
 		}()
 	}
@@ -471,8 +471,8 @@ func TestIntegerDataPoints(t *testing.T) {
 
 	pastTime := time.Now().Add(-2 * time.Second)
 
-	agg.AddMetrics(createTestIntMetrics("alice@example.com", "test.int.sum", 42, pastTime))
-	agg.AddMetrics(createTestIntGaugeMetrics("alice@example.com", "test.int.gauge", 99, pastTime))
+	agg.AddMetrics(createTestIntMetrics("test@test.com", "test.int.sum", 42, pastTime))
+	agg.AddMetrics(createTestIntGaugeMetrics("test@test.com", "test.int.gauge", 99, pastTime))
 
 	completed := agg.GetAndClearCompletedMetrics(time.Now())
 
@@ -526,7 +526,7 @@ func TestEmitMetricsErrorPath(t *testing.T) {
 
 	// Send a metric into a past bucket so the emit ticker will try to flush it
 	pastTime := time.Now().Add(-2 * time.Second)
-	md := createTestMetricsWithTimestamp("alice@example.com", "test.metric", 1.0, pastTime)
+	md := createTestMetricsWithTimestamp("test@test.com", "test.metric", 1.0, pastTime)
 
 	if err := processor.ConsumeMetrics(context.Background(), md); err != nil {
 		t.Fatalf("ConsumeMetrics returned unexpected error: %v", err)
@@ -564,8 +564,8 @@ func TestMultipleMetricNamesInBatch(t *testing.T) {
 	sm := rm.ScopeMetrics().AppendEmpty()
 	sm.Scope().SetName("test")
 
-	addSumMetric(sm, "claude_code.cost.usage", "alice@example.com", 3.14, pastTime)
-	addSumMetric(sm, "claude_code.token.usage", "alice@example.com", 1000.0, pastTime)
+	addSumMetric(sm, "claude_code.cost.usage", "test@test.com", 3.14, pastTime)
+	addSumMetric(sm, "claude_code.token.usage", "test@test.com", 1000.0, pastTime)
 
 	agg.AddMetrics(md)
 
@@ -605,7 +605,7 @@ func TestUnsupportedMetricTypeSkipped(t *testing.T) {
 	hist := metric.SetEmptyHistogram()
 	dp := hist.DataPoints().AppendEmpty()
 	dp.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
-	dp.Attributes().PutStr("user.email", "alice@example.com")
+	dp.Attributes().PutStr("user.email", "test@test.com")
 
 	agg.AddMetrics(md)
 
@@ -800,8 +800,8 @@ func TestMetricsInSameBucketAreAggregated(t *testing.T) {
 	t1 := boundary.Add(-2 * time.Second) // within the bucket before boundary
 	t2 := boundary.Add(-1 * time.Second) // also within same bucket
 
-	agg.AddMetrics(createTestMetricsWithTimestamp("alice@example.com", "m", 10.0, t1))
-	agg.AddMetrics(createTestMetricsWithTimestamp("alice@example.com", "m", 5.0, t2))
+	agg.AddMetrics(createTestMetricsWithTimestamp("test@test.com", "m", 10.0, t1))
+	agg.AddMetrics(createTestMetricsWithTimestamp("test@test.com", "m", 5.0, t2))
 
 	// Advance past that bucket
 	completed := agg.GetAndClearCompletedMetrics(boundary.Add(time.Second))
@@ -829,8 +829,8 @@ func TestMetricsInAdjacentBucketsAreKeptSeparate(t *testing.T) {
 	t1 := boundary.Add(-1 * time.Second)                           // bucket N-1
 	t2 := boundary.Add(-time.Duration(bucketSize)*time.Second - 1) // bucket N-2
 
-	agg.AddMetrics(createTestMetricsWithTimestamp("alice@example.com", "m", 10.0, t1))
-	agg.AddMetrics(createTestMetricsWithTimestamp("alice@example.com", "m", 5.0, t2))
+	agg.AddMetrics(createTestMetricsWithTimestamp("test@test.com", "m", 10.0, t1))
+	agg.AddMetrics(createTestMetricsWithTimestamp("test@test.com", "m", 5.0, t2))
 
 	// Advance past both buckets
 	completed := agg.GetAndClearCompletedMetrics(boundary.Add(time.Second))
@@ -852,12 +852,12 @@ func TestMetricsInAdjacentBucketsAreKeptSeparate(t *testing.T) {
 func TestSerializeAttributesDeterminism(t *testing.T) {
 	// Build two maps with the same keys but inserted in opposite orders.
 	attrs1 := pcommon.NewMap()
-	attrs1.PutStr("user.email", "alice@example.com")
+	attrs1.PutStr("user.email", "test@test.com")
 	attrs1.PutStr("type", "input")
 
 	attrs2 := pcommon.NewMap()
 	attrs2.PutStr("type", "input")
-	attrs2.PutStr("user.email", "alice@example.com")
+	attrs2.PutStr("user.email", "test@test.com")
 
 	s1 := serializeAttributes(attrs1)
 	s2 := serializeAttributes(attrs2)
@@ -874,7 +874,7 @@ func TestSerializeAttributesDeterminism(t *testing.T) {
 	// What matters for correctness: identical maps (same insertion order)
 	// must always produce the same key.
 	attrs3 := pcommon.NewMap()
-	attrs3.PutStr("user.email", "alice@example.com")
+	attrs3.PutStr("user.email", "test@test.com")
 	attrs3.PutStr("type", "input")
 
 	if serializeAttributes(attrs1) != serializeAttributes(attrs3) {
@@ -894,9 +894,9 @@ func TestSerializeAttributesEmpty(t *testing.T) {
 // TestSerializeAttributesSingleKey verifies the format of a single-entry map.
 func TestSerializeAttributesSingleKey(t *testing.T) {
 	attrs := pcommon.NewMap()
-	attrs.PutStr("user.email", "alice@example.com")
+	attrs.PutStr("user.email", "test@test.com")
 	got := serializeAttributes(attrs)
-	want := "user.email=alice@example.com;"
+	want := "user.email=test@test.com;"
 	if got != want {
 		t.Errorf("serializeAttributes = %q, want %q", got, want)
 	}
@@ -920,7 +920,7 @@ func TestConcurrentAddAndClear(t *testing.T) {
 				case <-ctx.Done():
 					return
 				default:
-					agg.AddMetrics(createTestMetrics("alice@example.com", "test.metric", 1.0))
+					agg.AddMetrics(createTestMetrics("test@test.com", "test.metric", 1.0))
 				}
 			}
 		}()
@@ -966,7 +966,7 @@ func TestShutdownEmitsRemainingMetrics(t *testing.T) {
 
 	// Send a metric into a past (completed) bucket
 	pastTime := time.Now().Add(-2 * time.Second)
-	md := createTestMetricsWithTimestamp("alice@example.com", "test.metric", 42.0, pastTime)
+	md := createTestMetricsWithTimestamp("test@test.com", "test.metric", 42.0, pastTime)
 	if err := processor.ConsumeMetrics(context.Background(), md); err != nil {
 		t.Fatalf("ConsumeMetrics: %v", err)
 	}
@@ -998,7 +998,7 @@ func TestResourceAttributesPreservedInOutput(t *testing.T) {
 	rm.Resource().Attributes().PutStr("service.name", "my-service")
 	rm.Resource().Attributes().PutStr("service.version", "1.2.3")
 	sm := rm.ScopeMetrics().AppendEmpty()
-	addSumMetric(sm, "test.metric", "alice@example.com", 1.0, pastTime)
+	addSumMetric(sm, "test.metric", "test@test.com", 1.0, pastTime)
 
 	agg.AddMetrics(md)
 
@@ -1036,7 +1036,7 @@ func TestResourceAttributesPreservedInOutput(t *testing.T) {
 //	claude-haiku-4-5-20251001 = 0.000596 + 0.01890945 + 0.000395 = 0.02000045
 func TestClaudeCodeCostAggregationByModel(t *testing.T) {
 	const (
-		userEmail   = "josh@multitudes.com"
+		userEmail   = "test@test.com"
 		userID      = "965ad35a5b2f698e232309acb17e0fcac9efaa0f056bc4978dcaf942ead57896"
 		sessionID   = "7394d3a1-b1a5-4ec0-a258-ef1d01643dfa"
 		orgID       = "8385b83e-c151-4d79-a68b-eb9e4aab27ca"
@@ -1181,14 +1181,14 @@ func TestMetricMapCapEnforced(t *testing.T) {
 	}
 
 	// One more unique email — should be dropped.
-	agg.AddMetrics(createTestMetrics("overflow@example.com", "test.metric", 1.0))
+	agg.AddMetrics(createTestMetrics("test@test.com", "test.metric", 1.0))
 
 	if len(agg.metrics) != maxMetricEntries {
 		t.Errorf("Expected map to stay at %d after overflow, got %d", maxMetricEntries, len(agg.metrics))
 	}
 
 	// An existing entry should still be updated (cap only applies to new keys).
-	agg.AddMetrics(createTestMetrics("user0@example.com", "test.metric", 99.0))
+	agg.AddMetrics(createTestMetrics("test@test.com", "test.metric", 99.0))
 	if len(agg.metrics) != maxMetricEntries {
 		t.Errorf("Updating existing entry changed map size to %d", len(agg.metrics))
 	}
@@ -1207,10 +1207,86 @@ func TestMetricMapCapEnforcedGauge(t *testing.T) {
 		t.Fatalf("Expected map to be at capacity (%d), got %d", maxMetricEntries, len(agg.metrics))
 	}
 
-	agg.AddMetrics(createTestGaugeMetrics("overflow@example.com", "test.gauge", 1.0, time.Now()))
+	agg.AddMetrics(createTestGaugeMetrics("test@test.com", "test.gauge", 1.0, time.Now()))
 
 	if len(agg.metrics) != maxMetricEntries {
 		t.Errorf("Expected map to stay at %d after overflow, got %d", maxMetricEntries, len(agg.metrics))
+	}
+}
+
+// TestUserEmailFromResourceAttributes verifies that user.email is picked up from
+// resource attributes when it is absent from data point attributes — the pattern
+// used by Claude Code's OpenTelemetry SDK.
+func TestUserEmailFromResourceAttributes(t *testing.T) {
+	interval := 5 * time.Minute
+	agg := NewMetricAggregator("user.email", interval, zap.NewNop())
+
+	pastTime := time.Now().Add(-interval * 2)
+
+	// Build metrics where user.email lives on the resource, not the data point.
+	buildMetrics := func(metricName string, value float64, metricType string) pmetric.Metrics {
+		md := pmetric.NewMetrics()
+		rm := md.ResourceMetrics().AppendEmpty()
+		rm.Resource().Attributes().PutStr("user.email", "test@test.com")
+		rm.Resource().Attributes().PutStr("service.name", "claude-code")
+		sm := rm.ScopeMetrics().AppendEmpty()
+		sm.Scope().SetName("test")
+
+		metric := sm.Metrics().AppendEmpty()
+		metric.SetName(metricName)
+		metric.SetUnit("1")
+
+		if metricType == "sum" {
+			sum := metric.SetEmptySum()
+			sum.SetIsMonotonic(true)
+			sum.SetAggregationTemporality(pmetric.AggregationTemporalityDelta)
+			dp := sum.DataPoints().AppendEmpty()
+			dp.SetDoubleValue(value)
+			dp.SetTimestamp(pcommon.NewTimestampFromTime(pastTime))
+			dp.SetStartTimestamp(pcommon.NewTimestampFromTime(pastTime.Add(-time.Minute)))
+			// Intentionally no user.email on the data point
+		} else {
+			gauge := metric.SetEmptyGauge()
+			dp := gauge.DataPoints().AppendEmpty()
+			dp.SetDoubleValue(value)
+			dp.SetTimestamp(pcommon.NewTimestampFromTime(pastTime))
+			// Intentionally no user.email on the data point
+		}
+
+		return md
+	}
+
+	agg.AddMetrics(buildMetrics("claude_code.cost.usage", 1.5, "sum"))
+	agg.AddMetrics(buildMetrics("claude_code.active_time.total", 30.0, "gauge"))
+
+	if len(agg.metrics) == 0 {
+		t.Fatal("Expected metrics to be aggregated, but map is empty — user.email fallback to resource attributes is not working")
+	}
+
+	completed := agg.GetAndClearCompletedMetrics(time.Now())
+	if completed.MetricCount() == 0 {
+		t.Fatal("Expected completed metrics, got none")
+	}
+
+	// Verify the aggregation key used the resource-level email.
+	outRM := completed.ResourceMetrics().At(0)
+	sm := outRM.ScopeMetrics().At(0)
+	for i := 0; i < sm.Metrics().Len(); i++ {
+		m := sm.Metrics().At(i)
+		switch m.Type() {
+		case pmetric.MetricTypeSum:
+			dp := m.Sum().DataPoints().At(0)
+			email, ok := dp.Attributes().Get("user.email")
+			if !ok || email.AsString() != "test@test.com" {
+				t.Errorf("metric %s: expected user.email=test@test.com on output data point, got %q (ok=%v)", m.Name(), email.AsString(), ok)
+			}
+		case pmetric.MetricTypeGauge:
+			dp := m.Gauge().DataPoints().At(0)
+			email, ok := dp.Attributes().Get("user.email")
+			if !ok || email.AsString() != "test@test.com" {
+				t.Errorf("metric %s: expected user.email=test@test.com on output data point, got %q (ok=%v)", m.Name(), email.AsString(), ok)
+			}
+		}
 	}
 }
 

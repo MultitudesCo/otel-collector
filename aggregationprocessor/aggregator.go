@@ -134,8 +134,18 @@ func (ma *MetricAggregator) processSum(sum pmetric.Sum, metricName string, resou
 
 		attributeValue, found := dp.Attributes().Get(ma.attributeKey)
 		if !found {
-			// Skip data points without the required attribute
-			debugLog("DEBUG: Data point missing attribute", ma.attributeKey, "- skipping (metric:", metricName, ")")
+			attributeValue, found = resourceAttrs.Get(ma.attributeKey)
+			if found {
+				debugLog("DEBUG: Found", ma.attributeKey, "on resource attributes (not data point) for metric:", metricName, "value:", redact(attributeValue.AsString()))
+			}
+		} else {
+			debugLog("DEBUG: Found", ma.attributeKey, "on data point attributes for metric:", metricName, "value:", redact(attributeValue.AsString()))
+		}
+		if !found {
+			ma.logger.Warn("dropping data point: required attribute not found",
+				zap.String("attribute_key", ma.attributeKey),
+				zap.String("metric_name", metricName),
+			)
 			continue
 		}
 
@@ -177,6 +187,11 @@ func (ma *MetricAggregator) processSum(sum pmetric.Sum, metricName string, resou
 			}
 			resourceAttrs.CopyTo(agg.resourceAttrs)
 			dp.Attributes().CopyTo(agg.dpAttrs)
+			// Remove the aggregation key attribute from dpAttrs — it is always
+			// emitted separately via PutStr at output time, so storing it here
+			// would cause a duplicate and make dpAttrs inconsistent depending on
+			// whether the attribute came from the data point or resource attrs.
+			agg.dpAttrs.Remove(ma.attributeKey)
 			ma.metrics[key] = agg
 		}
 
@@ -207,8 +222,18 @@ func (ma *MetricAggregator) processGauge(gauge pmetric.Gauge, metricName string,
 
 		attributeValue, found := dp.Attributes().Get(ma.attributeKey)
 		if !found {
-			// Skip data points without the required attribute
-			debugLog("DEBUG: Data point missing attribute", ma.attributeKey, "- skipping (metric:", metricName, ")")
+			attributeValue, found = resourceAttrs.Get(ma.attributeKey)
+			if found {
+				debugLog("DEBUG: Found", ma.attributeKey, "on resource attributes (not data point) for metric:", metricName, "value:", redact(attributeValue.AsString()))
+			}
+		} else {
+			debugLog("DEBUG: Found", ma.attributeKey, "on data point attributes for metric:", metricName, "value:", redact(attributeValue.AsString()))
+		}
+		if !found {
+			ma.logger.Warn("dropping data point: required attribute not found",
+				zap.String("attribute_key", ma.attributeKey),
+				zap.String("metric_name", metricName),
+			)
 			continue
 		}
 
@@ -247,6 +272,11 @@ func (ma *MetricAggregator) processGauge(gauge pmetric.Gauge, metricName string,
 			}
 			resourceAttrs.CopyTo(agg.resourceAttrs)
 			dp.Attributes().CopyTo(agg.dpAttrs)
+			// Remove the aggregation key attribute from dpAttrs — it is always
+			// emitted separately via PutStr at output time, so storing it here
+			// would cause a duplicate and make dpAttrs inconsistent depending on
+			// whether the attribute came from the data point or resource attrs.
+			agg.dpAttrs.Remove(ma.attributeKey)
 			ma.metrics[key] = agg
 		}
 
@@ -278,7 +308,6 @@ func (ma *MetricAggregator) GetAndClearCompletedMetrics(now time.Time) pmetric.M
 	currentBucket := ma.getTimeBucket(now)
 	md := pmetric.NewMetrics()
 
-	// DEBUG: Log checking for completed metrics
 	debugLog("DEBUG: GetAndClearCompletedMetrics - currentBucket:", currentBucket, "totalMetrics:", len(ma.metrics))
 
 	// Find all completed metrics (time buckets before current).
