@@ -99,6 +99,16 @@ Refer to the Claude Code documentation for more:
 
 Each person sending OTel metrics should be logged in using their work email. This allows Multitudes to correctly match the incoming metrics to users in Multitudes.
 
+## Releasing a new version
+
+The version is stored in the `VERSION` file in the repository root. To release a new version:
+
+1. Make your changes in a branch
+2. Bump the version in `VERSION` (e.g. `1.1.0` → `1.2.0`)
+3. Open and merge a PR into `prod`
+
+CI will automatically create the git tag and build the versioned Docker image. If a PR does not require a version bump (e.g. documentation changes), leave `VERSION` unchanged.
+
 ## Building the image locally
 
 If you would prefer to build the image locally instead of pulling from the GitHub Container Registry:
