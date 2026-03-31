@@ -2,6 +2,8 @@ package aggregationprocessor
 
 import (
 	"context"
+	"os"
+	"strings"
 	"time"
 
 	"go.opentelemetry.io/collector/component"
@@ -10,6 +12,14 @@ import (
 	"go.opentelemetry.io/collector/processor"
 	"go.uber.org/zap"
 )
+
+func readVersion() string {
+	data, err := os.ReadFile("/VERSION")
+	if err != nil {
+		return "unknown"
+	}
+	return strings.TrimSpace(string(data))
+}
 
 type aggregationProcessor struct {
 	logger     *zap.Logger
@@ -46,6 +56,7 @@ func (ap *aggregationProcessor) Start(ctx context.Context, host component.Host) 
 	go ap.emitLoop(ctx)
 
 	ap.logger.Info("Aggregation processor started",
+		zap.String("version", readVersion()),
 		zap.String("attribute_key", ap.config.AttributeKey),
 		zap.Duration("aggregation_interval", ap.config.AggregationInterval),
 		zap.Duration("emit_interval", ap.config.EmitInterval),
