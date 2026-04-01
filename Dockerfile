@@ -25,6 +25,9 @@ WORKDIR /
 # Copy the custom collector binary from builder
 COPY --from=builder /build/dist/otelcol-multitudes /otelcol-multitudes
 
+# Copy version file for runtime logging
+COPY VERSION /VERSION
+
 # Copy the production collector configuration
 # For local development, docker-compose will volume mount otel-collector-config.local.yaml
 COPY otel-collector-config.yaml /etc/otelcol-contrib/otel-collector-config.yaml

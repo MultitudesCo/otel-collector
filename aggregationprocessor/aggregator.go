@@ -131,11 +131,11 @@ func (ma *MetricAggregator) processMetric(metric pmetric.Metric, resourceAttrs p
 // then falls back to resource attributes. Returns the value and whether it was found.
 func (ma *MetricAggregator) resolveAttributeValue(dpAttrs pcommon.Map, resourceAttrs pcommon.Map, metricName string) (pcommon.Value, bool) {
 	if v, ok := dpAttrs.Get(ma.attributeKey); ok {
-		debugLog("DEBUG: Found", ma.attributeKey, "on data point attributes for metric:", metricName, "value:", redact(v.AsString()))
+		debugLog("DEBUG: Found", ma.attributeKey, "on data point attributes for metric:", metricName, "value:", v.AsString())
 		return v, true
 	}
 	if v, ok := resourceAttrs.Get(ma.attributeKey); ok {
-		debugLog("DEBUG: Found", ma.attributeKey, "on resource attributes (not data point) for metric:", metricName, "value:", redact(v.AsString()))
+		debugLog("DEBUG: Found", ma.attributeKey, "on resource attributes (not data point) for metric:", metricName, "value:", v.AsString())
 		return v, true
 	}
 	return pcommon.Value{}, false
@@ -330,7 +330,7 @@ func (ma *MetricAggregator) GetAndClearCompletedMetrics(now time.Time) pmetric.M
 		debugLog("DEBUG: Found", len(completedMetrics), "completed metrics to emit:")
 		for key, agg := range completedMetrics {
 			debugLog(fmt.Sprintf("DEBUG:   -> %s{%s=%s} sum=%.4f count=%d bucket=%d",
-				key.metricName, ma.attributeKey, redact(key.attributeValue), agg.sum, agg.count, key.timeBucket))
+				key.metricName, ma.attributeKey, key.attributeValue, agg.sum, agg.count, key.timeBucket))
 		}
 	}
 
@@ -407,18 +407,13 @@ func (ma *MetricAggregator) getTimeBucket(t time.Time) int64 {
 }
 
 // formatAttributes formats attributes as a comma-separated label string for debug logging.
-// Values for keys containing "email" or "user" are redacted.
 func formatAttributes(attrs pcommon.Map) string {
 	result := ""
 	attrs.Range(func(k string, v pcommon.Value) bool {
 		if result != "" {
 			result += ", "
 		}
-		val := v.AsString()
-		if k == "user.email" || k == "user.id" || k == "user.name" {
-			val = redact(val)
-		}
-		result += k + "=" + val
+		result += k + "=" + v.AsString()
 		return true
 	})
 	return result
