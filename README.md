@@ -99,6 +99,22 @@ Refer to the Claude Code documentation for more:
 
 Each person sending OTel metrics should be logged in using their work email. This allows Multitudes to correctly match the incoming metrics to users in Multitudes.
 
+#### AWS Bedrock deployments
+
+When using Claude Code with AWS Bedrock, the `user.email` attribute must be configured manually via the `OTEL_RESOURCE_ATTRIBUTES` environment variable. This is because Bedrock authentication does not automatically provide user email information.
+
+Add the following to each developer's `~/.claude/settings.json`:
+
+```json
+{
+  "env": {
+    "OTEL_RESOURCE_ATTRIBUTES": "user.email=developer@company.com"
+  }
+}
+```
+
+You can automate this setup by extracting the email from your AWS authentication system (e.g., `aws sts get-caller-identity`) and deploying settings files centrally. See [Using server-managed settings files](#using-server-managed-settings-files) above.
+
 ## Releasing a new version
 
 The version is stored in the `VERSION` file in the repository root. To release a new version:
