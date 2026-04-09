@@ -14,6 +14,8 @@ import (
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/processor/processortest"
 	"go.uber.org/zap"
+
+	"github.com/multitudes/otel-collector/multitudesauthextension"
 )
 
 func TestAggregationProcessor(t *testing.T) {
@@ -1295,6 +1297,198 @@ func abs(x float64) float64 {
 		return -x
 	}
 	return x
+}
+
+// ---------------------------------------------------------------------------
+// API key pass-through tests
+// ---------------------------------------------------------------------------
+
+// TestConsumeMetrics_InjectsApiKeyFromContext verifies that when the auth
+// extension has placed a Bearer token in context, ConsumeMetrics stamps every
+// ResourceMetrics block with the internal API key attribute.
+func TestConsumeMetrics_InjectsApiKeyFromContext(t *testing.T) {
+	sink := &consumertest.MetricsSink{}
+	cfg := &Config{
+		AttributeKey:        "user.email",
+		AggregationInterval: time.Hour,
+		EmitInterval:        time.Second,
+	}
+
+	factory := NewFactory()
+	set := processortest.NewNopSettings()
+	proc, err := factory.CreateMetrics(context.Background(), set, cfg, sink)
+	if err != nil {
+		t.Fatalf("Failed to create processor: %v", err)
+	}
+	if err := proc.Start(context.Background(), componenttest.NewNopHost()); err != nil {
+		t.Fatalf("Failed to start processor: %v", err)
+	}
+	defer proc.Shutdown(context.Background())
+
+	ctx := multitudesauthextension.ContextWithApiKey(context.Background(), "my-dev-token")
+	md := createTestMetrics("dev@example.com", "test.metric", 1.0)
+
+	if err := proc.ConsumeMetrics(ctx, md); err != nil {
+		t.Fatalf("ConsumeMetrics error: %v", err)
+	}
+
+	// Inspect the aggregator's internal state directly.
+	ap := proc.(*aggregationProcessor)
+	ap.aggregator.mu.RLock()
+	defer ap.aggregator.mu.RUnlock()
+
+	if len(ap.aggregator.metrics) == 0 {
+		t.Fatal("Expected at least one aggregated metric entry")
+	}
+	for _, agg := range ap.aggregator.metrics {
+		v, ok := agg.resourceAttrs.Get(multitudesauthextension.InternalApiKeyAttr)
+		if !ok {
+			t.Errorf("Expected resource attr %q to be set, but it was absent", multitudesauthextension.InternalApiKeyAttr)
+			continue
+		}
+		if got := v.AsString(); got != "my-dev-token" {
+			t.Errorf("resource attr %q = %q, want %q", multitudesauthextension.InternalApiKeyAttr, got, "my-dev-token")
+		}
+	}
+}
+
+// TestConsumeMetrics_NoInjectionWithoutContextToken verifies that when the
+// context carries no Bearer token (no auth extension or unauthenticated
+// request), ConsumeMetrics does not add the internal API key attribute.
+func TestConsumeMetrics_NoInjectionWithoutContextToken(t *testing.T) {
+	sink := &consumertest.MetricsSink{}
+	cfg := &Config{
+		AttributeKey:        "user.email",
+		AggregationInterval: time.Hour,
+		EmitInterval:        time.Second,
+	}
+
+	factory := NewFactory()
+	set := processortest.NewNopSettings()
+	proc, err := factory.CreateMetrics(context.Background(), set, cfg, sink)
+	if err != nil {
+		t.Fatalf("Failed to create processor: %v", err)
+	}
+	if err := proc.Start(context.Background(), componenttest.NewNopHost()); err != nil {
+		t.Fatalf("Failed to start processor: %v", err)
+	}
+	defer proc.Shutdown(context.Background())
+
+	// Plain context — no token injected.
+	md := createTestMetrics("dev@example.com", "test.metric", 1.0)
+
+	if err := proc.ConsumeMetrics(context.Background(), md); err != nil {
+		t.Fatalf("ConsumeMetrics error: %v", err)
+	}
+
+	ap := proc.(*aggregationProcessor)
+	ap.aggregator.mu.RLock()
+	defer ap.aggregator.mu.RUnlock()
+
+	for _, agg := range ap.aggregator.metrics {
+		if _, ok := agg.resourceAttrs.Get(multitudesauthextension.InternalApiKeyAttr); ok {
+			t.Errorf("Expected resource attr %q to be absent when no token in context, but it was set", multitudesauthextension.InternalApiKeyAttr)
+		}
+	}
+}
+
+// TestGetAndClearCompletedMetrics_GroupsByApiKey verifies that completed metrics
+// carrying different API keys in their resource attributes are emitted as
+// separate ResourceMetrics blocks.
+func TestGetAndClearCompletedMetrics_GroupsByApiKey(t *testing.T) {
+	agg := NewMetricAggregator("user.email", time.Second, zap.NewNop())
+
+	pastTime := time.Now().Add(-2 * time.Second)
+
+	// Alice's metrics with token-alice.
+	mdAlice := createTestMetricsWithTimestamp("alice@example.com", "test.metric", 1.0, pastTime)
+	mdAlice.ResourceMetrics().At(0).Resource().Attributes().PutStr(
+		multitudesauthextension.InternalApiKeyAttr, "token-alice",
+	)
+
+	// Bob's metrics with token-bob.
+	mdBob := createTestMetricsWithTimestamp("bob@example.com", "test.metric", 2.0, pastTime)
+	mdBob.ResourceMetrics().At(0).Resource().Attributes().PutStr(
+		multitudesauthextension.InternalApiKeyAttr, "token-bob",
+	)
+
+	agg.AddMetrics(mdAlice)
+	agg.AddMetrics(mdBob)
+
+	completed := agg.GetAndClearCompletedMetrics(time.Now())
+
+	if completed.ResourceMetrics().Len() != 2 {
+		t.Fatalf("Expected 2 ResourceMetrics blocks (one per API key), got %d", completed.ResourceMetrics().Len())
+	}
+
+	// Collect the API keys present in the output ResourceMetrics.
+	foundKeys := map[string]bool{}
+	for i := 0; i < completed.ResourceMetrics().Len(); i++ {
+		rm := completed.ResourceMetrics().At(i)
+		v, ok := rm.Resource().Attributes().Get(multitudesauthextension.InternalApiKeyAttr)
+		if !ok {
+			t.Errorf("ResourceMetrics[%d] missing internal API key attribute", i)
+			continue
+		}
+		foundKeys[v.AsString()] = true
+	}
+	if !foundKeys["token-alice"] {
+		t.Error("Expected a ResourceMetrics block for token-alice")
+	}
+	if !foundKeys["token-bob"] {
+		t.Error("Expected a ResourceMetrics block for token-bob")
+	}
+}
+
+// TestGetAndClearCompletedMetrics_SameApiKeyGroupedTogether verifies that
+// metrics from multiple resources sharing the same API key are batched into
+// a single ResourceMetrics block.
+func TestGetAndClearCompletedMetrics_SameApiKeyGroupedTogether(t *testing.T) {
+	agg := NewMetricAggregator("user.email", time.Second, zap.NewNop())
+
+	pastTime := time.Now().Add(-2 * time.Second)
+
+	for _, email := range []string{"alice@example.com", "bob@example.com", "carol@example.com"} {
+		md := createTestMetricsWithTimestamp(email, "test.metric", 1.0, pastTime)
+		md.ResourceMetrics().At(0).Resource().Attributes().PutStr(
+			multitudesauthextension.InternalApiKeyAttr, "shared-org-token",
+		)
+		agg.AddMetrics(md)
+	}
+
+	completed := agg.GetAndClearCompletedMetrics(time.Now())
+
+	if completed.ResourceMetrics().Len() != 1 {
+		t.Fatalf("Expected 1 ResourceMetrics block for shared API key, got %d", completed.ResourceMetrics().Len())
+	}
+
+	if completed.DataPointCount() != 3 {
+		t.Errorf("Expected 3 data points (one per user), got %d", completed.DataPointCount())
+	}
+}
+
+// TestGetAndClearCompletedMetrics_NoApiKeyFallsBackToEmpty verifies that
+// metrics with no internal API key attribute are grouped under the empty key
+// (the exporter will use its configured fallback token for this group).
+func TestGetAndClearCompletedMetrics_NoApiKeyFallsBackToEmpty(t *testing.T) {
+	agg := NewMetricAggregator("user.email", time.Second, zap.NewNop())
+
+	pastTime := time.Now().Add(-2 * time.Second)
+	md := createTestMetricsWithTimestamp("anon@example.com", "test.metric", 5.0, pastTime)
+	// No internal API key attribute set.
+
+	agg.AddMetrics(md)
+
+	completed := agg.GetAndClearCompletedMetrics(time.Now())
+
+	if completed.ResourceMetrics().Len() != 1 {
+		t.Fatalf("Expected 1 ResourceMetrics block, got %d", completed.ResourceMetrics().Len())
+	}
+
+	rm := completed.ResourceMetrics().At(0)
+	if _, ok := rm.Resource().Attributes().Get(multitudesauthextension.InternalApiKeyAttr); ok {
+		t.Error("Expected no internal API key attribute in output when none was set on input")
+	}
 }
 
 func createTestMetricsWithTokenType(userEmail, metricName, tokenType string, value float64) pmetric.Metrics {

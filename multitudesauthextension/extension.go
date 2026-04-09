@@ -62,6 +62,14 @@ func GetApiKeyFromContext(ctx context.Context) (token string, found bool) {
 	return token, ok && token != ""
 }
 
+// ContextWithApiKey returns a copy of ctx with the given Bearer token stored
+// under the auth extension's context key. Intended for use in tests and for
+// any code that needs to synthesize an authenticated context without going
+// through the full auth extension pipeline.
+func ContextWithApiKey(ctx context.Context, token string) context.Context {
+	return context.WithValue(ctx, apiKeyContextKey{}, token)
+}
+
 // extractBearer pulls the Bearer token out of the Authorization header.
 // Checks both lowercase and title-case forms since different OTel Collector
 // versions normalise header keys differently.
