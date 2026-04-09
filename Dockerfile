@@ -6,9 +6,11 @@ RUN go install go.opentelemetry.io/collector/cmd/builder@v0.115.0
 
 WORKDIR /build
 
-# Copy builder configuration and custom processor
+# Copy builder configuration and custom components
 COPY builder-config.yaml .
 COPY aggregationprocessor ./aggregationprocessor
+COPY multitudesauthextension ./multitudesauthextension
+COPY multitudesexporter ./multitudesexporter
 
 # Build the custom collector
 RUN CGO_ENABLED=0 builder --config=builder-config.yaml

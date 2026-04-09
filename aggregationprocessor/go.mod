@@ -3,6 +3,7 @@ module github.com/multitudes/otel-collector/aggregationprocessor
 go 1.26
 
 require (
+	github.com/multitudes/otel-collector/multitudesauthextension v0.0.0
 	go.opentelemetry.io/collector/component v0.115.0
 	go.opentelemetry.io/collector/component/componenttest v0.115.0
 	go.opentelemetry.io/collector/consumer v1.21.0
@@ -12,6 +13,8 @@ require (
 	go.opentelemetry.io/collector/processor/processortest v0.115.0
 	go.uber.org/zap v1.27.0
 )
+
+replace github.com/multitudes/otel-collector/multitudesauthextension => ../multitudesauthextension
 
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
