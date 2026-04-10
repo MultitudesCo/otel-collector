@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 
@@ -166,6 +167,7 @@ func (e *multitudesExporter) exportWithToken(ctx context.Context, md pmetric.Met
 		if err != nil {
 			lastErr = fmt.Errorf("http request: %w", err)
 		} else {
+			_, _ = io.Copy(io.Discard, resp.Body)
 			resp.Body.Close()
 			if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 				return nil
