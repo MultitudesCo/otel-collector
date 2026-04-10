@@ -430,3 +430,72 @@ func TestExportWithToken_RetriesOn429(t *testing.T) {
 		t.Errorf("expected 3 attempts, got %d", attempts)
 	}
 }
+
+// TestConsumeMetrics_PartialFailureTrimsMdForRetry verifies that when one
+// token succeeds and another fails, the successfully-exported ResourceMetrics
+// are removed from md so that an upstream retry does not duplicate them.
+func TestConsumeMetrics_PartialFailureTrimsMdForRetry(t *testing.T) {
+	aliceRequests := 0
+	bobShouldFail := true
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		auth := r.Header.Get("Authorization")
+		switch auth {
+		case "Bearer token-alice":
+			aliceRequests++
+			w.WriteHeader(http.StatusOK)
+		case "Bearer token-bob":
+			if bobShouldFail {
+				w.WriteHeader(http.StatusInternalServerError)
+			} else {
+				w.WriteHeader(http.StatusOK)
+			}
+		default:
+			w.WriteHeader(http.StatusUnauthorized)
+		}
+	}))
+	defer srv.Close()
+
+	exp, _ := newTestExporter(srv.URL, "")
+
+	md := pmetric.NewMetrics()
+
+	rmAlice := md.ResourceMetrics().AppendEmpty()
+	rmAlice.Resource().Attributes().PutStr(multitudesauthextension.InternalApiKeyAttr, "token-alice")
+	smAlice := rmAlice.ScopeMetrics().AppendEmpty()
+	mAlice := smAlice.Metrics().AppendEmpty()
+	mAlice.SetName("alice.metric")
+	dpAlice := mAlice.SetEmptySum().DataPoints().AppendEmpty()
+	dpAlice.SetDoubleValue(1.0)
+	dpAlice.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+
+	rmBob := md.ResourceMetrics().AppendEmpty()
+	rmBob.Resource().Attributes().PutStr(multitudesauthextension.InternalApiKeyAttr, "token-bob")
+	smBob := rmBob.ScopeMetrics().AppendEmpty()
+	mBob := smBob.Metrics().AppendEmpty()
+	mBob.SetName("bob.metric")
+	dpBob := mBob.SetEmptySum().DataPoints().AppendEmpty()
+	dpBob.SetDoubleValue(2.0)
+	dpBob.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+
+	// First call: alice succeeds, bob fails.
+	if err := exp.ConsumeMetrics(context.Background(), md); err == nil {
+		t.Fatal("expected an error on partial failure, got nil")
+	}
+
+	// Alice's ResourceMetrics must have been removed from md; only bob's remain.
+	if got := md.ResourceMetrics().Len(); got != 1 {
+		t.Fatalf("expected 1 ResourceMetrics remaining after partial failure, got %d", got)
+	}
+
+	// Simulate retry: bob now succeeds.
+	bobShouldFail = false
+	if err := exp.ConsumeMetrics(context.Background(), md); err != nil {
+		t.Fatalf("expected retry to succeed, got: %v", err)
+	}
+
+	// Alice must not have been re-sent on the retry.
+	if aliceRequests != 1 {
+		t.Errorf("alice was sent %d time(s), expected exactly 1 (no duplication on retry)", aliceRequests)
+	}
+}

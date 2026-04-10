@@ -56,9 +56,17 @@ func (e *multitudesExporter) Shutdown(_ context.Context) error {
 // token in the internal resource attribute set by the aggregation processor.
 // We split by token and make one HTTP call per unique token.
 func (e *multitudesExporter) ConsumeMetrics(ctx context.Context, md pmetric.Metrics) error {
-	// Partition ResourceMetrics by Bearer token.
-	byToken := make(map[string]pmetric.Metrics)
-	tokenOrder := make([]string, 0) // preserve a consistent order for logging
+	// Partition ResourceMetrics by Bearer token, tracking the original index of
+	// each rm so we can remove successfully-exported entries from md before
+	// returning an error. Because Capabilities() declares MutatesData:true, the
+	// pipeline gives us our own copy; the retry_sender reuses that same copy, so
+	// trimming committed resource metrics here prevents duplication on retry.
+	type tokenBatch struct {
+		metrics   pmetric.Metrics
+		rmIndices []int // indices into md.ResourceMetrics()
+	}
+	byToken := make(map[string]*tokenBatch)
+	tokenOrder := make([]string, 0)
 
 	for i := 0; i < md.ResourceMetrics().Len(); i++ {
 		rm := md.ResourceMetrics().At(i)
@@ -82,25 +90,43 @@ func (e *multitudesExporter) ConsumeMetrics(ctx context.Context, md pmetric.Metr
 		}
 
 		if _, seen := byToken[token]; !seen {
-			byToken[token] = pmetric.NewMetrics()
+			byToken[token] = &tokenBatch{metrics: pmetric.NewMetrics()}
 			tokenOrder = append(tokenOrder, token)
 		}
-		rm.CopyTo(byToken[token].ResourceMetrics().AppendEmpty())
+		rm.CopyTo(byToken[token].metrics.ResourceMetrics().AppendEmpty())
+		byToken[token].rmIndices = append(byToken[token].rmIndices, i)
 	}
 
+	successfulIndices := make(map[int]bool)
 	var firstErr error
 	for _, token := range tokenOrder {
 		batch := byToken[token]
-		if err := e.exportWithToken(ctx, batch, token); err != nil {
+		if err := e.exportWithToken(ctx, batch.metrics, token); err != nil {
 			e.logger.Error("Failed to export metrics",
-				zap.Int("data_points", batch.DataPointCount()),
+				zap.Int("data_points", batch.metrics.DataPointCount()),
 				zap.Error(err),
 			)
 			if firstErr == nil {
 				firstErr = err
 			}
+		} else {
+			for _, idx := range batch.rmIndices {
+				successfulIndices[idx] = true
+			}
 		}
 	}
+
+	// Remove successfully-exported resource metrics so that an upstream retry
+	// only covers the batches that actually failed.
+	if firstErr != nil {
+		pos := 0
+		md.ResourceMetrics().RemoveIf(func(_ pmetric.ResourceMetrics) bool {
+			remove := successfulIndices[pos]
+			pos++
+			return remove
+		})
+	}
+
 	return firstErr
 }
 
