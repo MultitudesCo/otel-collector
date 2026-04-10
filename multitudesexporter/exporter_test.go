@@ -499,3 +499,58 @@ func TestConsumeMetrics_PartialFailureTrimsMdForRetry(t *testing.T) {
 		t.Errorf("alice was sent %d time(s), expected exactly 1 (no duplication on retry)", aliceRequests)
 	}
 }
+
+// TestConsumeMetrics_OriginalMdRetainsInternalAttrAfterSuccess verifies that
+// ConsumeMetrics does not strip the internal api-key attribute from the original
+// md entries, even after a fully successful export. The attribute must only be
+// removed from the payload copy that is sent to the backend.
+func TestConsumeMetrics_OriginalMdRetainsInternalAttrAfterSuccess(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	exp, _ := newTestExporter(srv.URL, "")
+	md := makeMetrics(map[string]string{
+		multitudesauthextension.InternalApiKeyAttr: "per-client-token",
+	}, "test.metric", 1.0)
+
+	if err := exp.ConsumeMetrics(context.Background(), md); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	rm := md.ResourceMetrics().At(0)
+	v, ok := rm.Resource().Attributes().Get(multitudesauthextension.InternalApiKeyAttr)
+	if !ok {
+		t.Fatal("internal api-key attribute was stripped from the original md; retry would lose token")
+	}
+	if v.AsString() != "per-client-token" {
+		t.Errorf("attribute value = %q, want %q", v.AsString(), "per-client-token")
+	}
+}
+
+// TestConsumeMetrics_OriginalMdRetainsInternalAttrAfterFailure verifies the
+// attribute is also untouched when the export fails so that the upstream
+// retry_sender can re-present md and have token resolution succeed identically.
+func TestConsumeMetrics_OriginalMdRetainsInternalAttrAfterFailure(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	exp, _ := newTestExporter(srv.URL, "")
+	md := makeMetrics(map[string]string{
+		multitudesauthextension.InternalApiKeyAttr: "per-client-token",
+	}, "test.metric", 1.0)
+
+	_ = exp.ConsumeMetrics(context.Background(), md) // error expected; ignore it
+
+	rm := md.ResourceMetrics().At(0)
+	v, ok := rm.Resource().Attributes().Get(multitudesauthextension.InternalApiKeyAttr)
+	if !ok {
+		t.Fatal("internal api-key attribute was stripped from the original md; retry would lose token")
+	}
+	if v.AsString() != "per-client-token" {
+		t.Errorf("attribute value = %q, want %q", v.AsString(), "per-client-token")
+	}
+}
