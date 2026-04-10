@@ -42,27 +42,6 @@ func TestCreateMetricsExporter_AcceptsValidConfig(t *testing.T) {
 	}
 }
 
-// --- redactToken ---
-
-func TestRedactToken(t *testing.T) {
-	tests := []struct {
-		input string
-		want  string
-	}{
-		{"abcdefgh", "abcd***"},
-		{"ab",       "***"},
-		{"abcd",     "***"},
-		{"abcde",    "abcd***"},
-		{"",         "***"},
-	}
-	for _, tt := range tests {
-		got := redactToken(tt.input)
-		if got != tt.want {
-			t.Errorf("redactToken(%q) = %q, want %q", tt.input, got, tt.want)
-		}
-	}
-}
-
 // --- helpers ---
 
 func makeMetrics(resourceAttrs map[string]string, metricName string, value float64) pmetric.Metrics {
@@ -89,7 +68,7 @@ func newTestExporter(endpoint, fallbackToken string) (*multitudesExporter, error
 		FallbackToken: fallbackToken,
 		Timeout:       5 * time.Second,
 		RetryOnFailure: RetryConfig{
-			Enabled:        false,
+			Enabled: false,
 		},
 	}
 	exp := newExporter(cfg, zap.NewNop())
@@ -110,7 +89,7 @@ func TestConsumeMetrics_UsesPerClientToken(t *testing.T) {
 
 	exp, _ := newTestExporter(srv.URL, "fallback-token")
 	md := makeMetrics(map[string]string{
-		"user.email":       "dev@example.com",
+		"user.email": "dev@example.com",
 		multitudesauthextension.InternalApiKeyAttr: "per-client-token",
 	}, "test.metric", 1.0)
 
@@ -156,7 +135,7 @@ func TestConsumeMetrics_StripsInternalAttribute(t *testing.T) {
 
 	exp, _ := newTestExporter(srv.URL, "fallback-token")
 	md := makeMetrics(map[string]string{
-		"user.email":       "dev@example.com",
+		"user.email": "dev@example.com",
 		multitudesauthextension.InternalApiKeyAttr: "secret-token",
 	}, "test.metric", 1.0)
 

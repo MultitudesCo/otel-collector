@@ -15,15 +15,6 @@ import (
 	"github.com/multitudes/otel-collector/multitudesauthextension"
 )
 
-// redactToken shows the first 4 characters of a Bearer token followed by ***
-// so log readers can confirm which key is in use without exposing the full secret.
-func redactToken(t string) string {
-	if len(t) <= 4 {
-		return "***"
-	}
-	return t[:4] + "***"
-}
-
 type multitudesExporter struct {
 	cfg    *Config
 	logger *zap.Logger
@@ -84,7 +75,7 @@ func (e *multitudesExporter) ConsumeMetrics(ctx context.Context, md pmetric.Metr
 		rm.Resource().Attributes().Remove(multitudesauthextension.InternalApiKeyAttr)
 		e.logger.Info("exporter: resolved Bearer token for export",
 			zap.String("source", source),
-			zap.String("token_prefix", redactToken(token)),
+			zap.Bool("has_token", token != ""),
 		)
 
 		if _, seen := byToken[token]; !seen {
