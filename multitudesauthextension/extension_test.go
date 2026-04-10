@@ -57,6 +57,26 @@ func TestExtractBearer_EmptyHeaders(t *testing.T) {
 	}
 }
 
+func TestExtractBearer_LowercaseBearerScheme(t *testing.T) {
+	headers := map[string][]string{
+		"authorization": {"bearer lowercase-token"},
+	}
+	got := extractBearer(headers)
+	if got != "lowercase-token" {
+		t.Errorf("got %q, want %q", got, "lowercase-token")
+	}
+}
+
+func TestExtractBearer_UppercaseBearerScheme(t *testing.T) {
+	headers := map[string][]string{
+		"authorization": {"BEARER UPPERCASE-TOKEN"},
+	}
+	got := extractBearer(headers)
+	if got != "UPPERCASE-TOKEN" {
+		t.Errorf("got %q, want %q", got, "UPPERCASE-TOKEN")
+	}
+}
+
 func TestExtractBearer_NotBearerScheme(t *testing.T) {
 	headers := map[string][]string{
 		"authorization": {"Basic dXNlcjpwYXNz"},

@@ -86,16 +86,20 @@ func (ap *aggregationProcessor) Capabilities() consumer.Capabilities {
 }
 
 func (ap *aggregationProcessor) ConsumeMetrics(ctx context.Context, md pmetric.Metrics) error {
-	// If the multitudes_auth extension is configured on the receiver, it places
-	// the client's Bearer token in ctx. Inject it as an internal resource
-	// attribute so it survives the aggregation window and can be used by the
-	// exporter. The exporter strips the attribute before forwarding.
-	if token, ok := multitudesauthextension.GetApiKeyFromContext(ctx); ok {
-		for i := 0; i < md.ResourceMetrics().Len(); i++ {
-			md.ResourceMetrics().At(i).Resource().Attributes().PutStr(
-				multitudesauthextension.InternalApiKeyAttr, token,
-			)
+	// Always strip any client-supplied value of the internal attribute first so
+	// a malicious or misconfigured client cannot inject a token by setting it
+	// directly on their resource attributes.
+	// If the multitudes_auth extension placed a verified Bearer token in ctx,
+	// write it back as the sole authoritative value.
+	token, hasToken := multitudesauthextension.GetApiKeyFromContext(ctx)
+	for i := 0; i < md.ResourceMetrics().Len(); i++ {
+		attrs := md.ResourceMetrics().At(i).Resource().Attributes()
+		attrs.Remove(multitudesauthextension.InternalApiKeyAttr)
+		if hasToken {
+			attrs.PutStr(multitudesauthextension.InternalApiKeyAttr, token)
 		}
+	}
+	if hasToken {
 		debugLog("DEBUG: Injected API key into", md.ResourceMetrics().Len(), "resource metric(s)")
 	}
 

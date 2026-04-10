@@ -342,15 +342,20 @@ func (ma *MetricAggregator) GetAndClearCompletedMetrics(now time.Time) pmetric.M
 		}
 	}
 
-	// Group completed metrics by API key (from resource attributes).
-	// Each unique API key gets its own ResourceMetrics so the exporter can set
-	// the correct per-client Authorization header. An empty string is used as
-	// the key for metrics that carry no API key (exporter falls back to the
-	// centrally-configured MULTITUDES_INTEGRATION_TOKEN in that case).
+	// Group completed metrics by (API key, resource attributes) so that:
+	//   - metrics from different clients (different API keys) are split into
+	//     separate ResourceMetrics blocks for per-client auth at export time;
+	//   - metrics from the same client but from distinct resources (different
+	//     service.name, host.name, etc.) also get their own ResourceMetrics
+	//     block, preserving the original resource metadata for each resource.
+	// An empty API key is used for metrics with no token; the exporter falls
+	// back to MULTITUDES_INTEGRATION_TOKEN for those.
 	type apiKeyGroup struct {
 		resourceAttrs pcommon.Map
 		metrics       []*aggregatedMetric
 	}
+	// groups is keyed by apiKey + "\x00" + serialized resource attrs (excluding
+	// the internal API key attr, which is already captured in the first half).
 	groups := make(map[string]*apiKeyGroup)
 
 	for _, agg := range completedMetrics {
@@ -358,12 +363,13 @@ func (ma *MetricAggregator) GetAndClearCompletedMetrics(now time.Time) pmetric.M
 		if v, ok := agg.resourceAttrs.Get(multitudesauthextension.InternalApiKeyAttr); ok {
 			apiKey = v.AsString()
 		}
-		if _, exists := groups[apiKey]; !exists {
+		groupKey := apiKey + "\x00" + serializeResourceKey(agg.resourceAttrs)
+		if _, exists := groups[groupKey]; !exists {
 			g := &apiKeyGroup{resourceAttrs: pcommon.NewMap()}
 			agg.resourceAttrs.CopyTo(g.resourceAttrs)
-			groups[apiKey] = g
+			groups[groupKey] = g
 		}
-		groups[apiKey].metrics = append(groups[apiKey].metrics, agg)
+		groups[groupKey].metrics = append(groups[groupKey].metrics, agg)
 	}
 
 	// Build one ResourceMetrics per API key group.
@@ -452,6 +458,21 @@ func serializeAttributes(attrs pcommon.Map) string {
 	result := ""
 	attrs.Range(func(k string, v pcommon.Value) bool {
 		result += k + "=" + v.AsString() + ";"
+		return true
+	})
+	return result
+}
+
+// serializeResourceKey serializes resource attributes for use as the resource
+// portion of a grouping key, excluding the internal API key attribute (which is
+// captured separately as the first half of the compound group key and is not
+// part of the resource identity).
+func serializeResourceKey(attrs pcommon.Map) string {
+	result := ""
+	attrs.Range(func(k string, v pcommon.Value) bool {
+		if k != multitudesauthextension.InternalApiKeyAttr {
+			result += k + "=" + v.AsString() + ";"
+		}
 		return true
 	})
 	return result

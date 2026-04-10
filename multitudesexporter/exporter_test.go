@@ -8,10 +8,39 @@ import (
 	"testing"
 	"time"
 
+	"go.opentelemetry.io/collector/exporter"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.uber.org/zap"
+
+	"github.com/multitudes/otel-collector/multitudesauthextension"
 )
+
+// --- factory validation ---
+
+func TestCreateMetricsExporter_RejectsEmptyEndpoint(t *testing.T) {
+	cfg := &Config{Endpoint: ""}
+	_, err := createMetricsExporter(context.Background(), exporter.Settings{}, cfg)
+	if err == nil {
+		t.Error("expected an error for empty endpoint, got nil")
+	}
+}
+
+func TestCreateMetricsExporter_RejectsMalformedEndpoint(t *testing.T) {
+	cfg := &Config{Endpoint: "not a valid url"}
+	_, err := createMetricsExporter(context.Background(), exporter.Settings{}, cfg)
+	if err == nil {
+		t.Error("expected an error for malformed endpoint, got nil")
+	}
+}
+
+func TestCreateMetricsExporter_AcceptsValidConfig(t *testing.T) {
+	cfg := &Config{Endpoint: "https://integrations.multitudes.co/ai/otel"}
+	_, err := createMetricsExporter(context.Background(), exporter.Settings{}, cfg)
+	if err != nil {
+		t.Errorf("expected no error for valid config, got: %v", err)
+	}
+}
 
 // --- redactToken ---
 
@@ -82,7 +111,7 @@ func TestConsumeMetrics_UsesPerClientToken(t *testing.T) {
 	exp, _ := newTestExporter(srv.URL, "fallback-token")
 	md := makeMetrics(map[string]string{
 		"user.email":       "dev@example.com",
-		internalApiKeyAttr: "per-client-token",
+		multitudesauthextension.InternalApiKeyAttr: "per-client-token",
 	}, "test.metric", 1.0)
 
 	if err := exp.ConsumeMetrics(context.Background(), md); err != nil {
@@ -103,7 +132,7 @@ func TestConsumeMetrics_FallsBackToFallbackToken(t *testing.T) {
 	defer srv.Close()
 
 	exp, _ := newTestExporter(srv.URL, "fallback-token")
-	// No internalApiKeyAttr in resource attributes.
+	// No multitudesauthextension.InternalApiKeyAttr in resource attributes.
 	md := makeMetrics(map[string]string{"user.email": "dev@example.com"}, "test.metric", 1.0)
 
 	if err := exp.ConsumeMetrics(context.Background(), md); err != nil {
@@ -128,7 +157,7 @@ func TestConsumeMetrics_StripsInternalAttribute(t *testing.T) {
 	exp, _ := newTestExporter(srv.URL, "fallback-token")
 	md := makeMetrics(map[string]string{
 		"user.email":       "dev@example.com",
-		internalApiKeyAttr: "secret-token",
+		multitudesauthextension.InternalApiKeyAttr: "secret-token",
 	}, "test.metric", 1.0)
 
 	if err := exp.ConsumeMetrics(context.Background(), md); err != nil {
@@ -172,7 +201,7 @@ func TestConsumeMetrics_SeparatesRequestsByToken(t *testing.T) {
 
 	rm1 := md.ResourceMetrics().AppendEmpty()
 	rm1.Resource().Attributes().PutStr("user.email", "alice@example.com")
-	rm1.Resource().Attributes().PutStr(internalApiKeyAttr, "token-alice")
+	rm1.Resource().Attributes().PutStr(multitudesauthextension.InternalApiKeyAttr, "token-alice")
 	sm1 := rm1.ScopeMetrics().AppendEmpty()
 	m1 := sm1.Metrics().AppendEmpty()
 	m1.SetName("test.metric")
@@ -182,7 +211,7 @@ func TestConsumeMetrics_SeparatesRequestsByToken(t *testing.T) {
 
 	rm2 := md.ResourceMetrics().AppendEmpty()
 	rm2.Resource().Attributes().PutStr("user.email", "bob@example.com")
-	rm2.Resource().Attributes().PutStr(internalApiKeyAttr, "token-bob")
+	rm2.Resource().Attributes().PutStr(multitudesauthextension.InternalApiKeyAttr, "token-bob")
 	sm2 := rm2.ScopeMetrics().AppendEmpty()
 	m2 := sm2.Metrics().AppendEmpty()
 	m2.SetName("test.metric")
@@ -225,7 +254,7 @@ func TestConsumeMetrics_SameTokenBatchedInOneRequest(t *testing.T) {
 	md := pmetric.NewMetrics()
 	for i := 0; i < 3; i++ {
 		rm := md.ResourceMetrics().AppendEmpty()
-		rm.Resource().Attributes().PutStr(internalApiKeyAttr, "shared-token")
+		rm.Resource().Attributes().PutStr(multitudesauthextension.InternalApiKeyAttr, "shared-token")
 		sm := rm.ScopeMetrics().AppendEmpty()
 		m := sm.Metrics().AppendEmpty()
 		m.SetName("test.metric")
@@ -326,5 +355,99 @@ func TestExportWithToken_ReturnsErrorAfterExhaustedRetries(t *testing.T) {
 	md := makeMetrics(nil, "test.metric", 1.0)
 	if err := exp.exportWithToken(context.Background(), md, "token"); err == nil {
 		t.Error("expected an error after exhausted retries, got nil")
+	}
+}
+
+func retryConfig() RetryConfig {
+	return RetryConfig{
+		Enabled:         true,
+		InitialInterval: 1 * time.Millisecond,
+		MaxInterval:     5 * time.Millisecond,
+		MaxElapsedTime:  1 * time.Second,
+	}
+}
+
+func newRetryExporter(t *testing.T, srv *httptest.Server) *multitudesExporter {
+	t.Helper()
+	cfg := &Config{
+		Endpoint:       srv.URL,
+		FallbackToken:  "token",
+		Timeout:        5 * time.Second,
+		RetryOnFailure: retryConfig(),
+	}
+	exp := newExporter(cfg, zap.NewNop())
+	exp.client = &http.Client{Timeout: 5 * time.Second}
+	exp.marshaler = &pmetric.JSONMarshaler{}
+	return exp
+}
+
+// TestExportWithToken_NoRetryOn4xx verifies that permanent 4xx responses
+// (excluding 408 and 429) cause an immediate bail-out with no further attempts.
+func TestExportWithToken_NoRetryOn4xx(t *testing.T) {
+	for _, status := range []int{400, 401, 403, 404} {
+		status := status
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			attempts := 0
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				attempts++
+				w.WriteHeader(status)
+			}))
+			defer srv.Close()
+
+			exp := newRetryExporter(t, srv)
+			md := makeMetrics(nil, "test.metric", 1.0)
+			if err := exp.exportWithToken(context.Background(), md, "token"); err == nil {
+				t.Errorf("status %d: expected an error, got nil", status)
+			}
+			if attempts != 1 {
+				t.Errorf("status %d: expected exactly 1 attempt (no retry), got %d", status, attempts)
+			}
+		})
+	}
+}
+
+// TestExportWithToken_RetriesOn408 verifies that 408 Request Timeout is retried.
+func TestExportWithToken_RetriesOn408(t *testing.T) {
+	attempts := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		if attempts < 3 {
+			w.WriteHeader(http.StatusRequestTimeout)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	exp := newRetryExporter(t, srv)
+	md := makeMetrics(nil, "test.metric", 1.0)
+	if err := exp.exportWithToken(context.Background(), md, "token"); err != nil {
+		t.Fatalf("expected success after retries on 408, got: %v", err)
+	}
+	if attempts != 3 {
+		t.Errorf("expected 3 attempts, got %d", attempts)
+	}
+}
+
+// TestExportWithToken_RetriesOn429 verifies that 429 Too Many Requests is retried.
+func TestExportWithToken_RetriesOn429(t *testing.T) {
+	attempts := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		if attempts < 3 {
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	exp := newRetryExporter(t, srv)
+	md := makeMetrics(nil, "test.metric", 1.0)
+	if err := exp.exportWithToken(context.Background(), md, "token"); err != nil {
+		t.Fatalf("expected success after retries on 429, got: %v", err)
+	}
+	if attempts != 3 {
+		t.Errorf("expected 3 attempts, got %d", attempts)
 	}
 }

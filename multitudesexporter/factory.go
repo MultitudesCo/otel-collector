@@ -39,5 +39,8 @@ func createMetricsExporter(
 	cfg component.Config,
 ) (exporter.Metrics, error) {
 	oCfg := cfg.(*Config)
+	if err := oCfg.Validate(); err != nil {
+		return nil, err
+	}
 	return newExporter(oCfg, set.Logger), nil
 }

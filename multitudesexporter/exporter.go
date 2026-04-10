@@ -11,11 +11,9 @@ import (
 	"go.opentelemetry.io/collector/consumer"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.uber.org/zap"
-)
 
-// internalApiKeyAttr must equal multitudesauthextension.InternalApiKeyAttr.
-// Defined as a local constant to avoid a cross-module import.
-const internalApiKeyAttr = "multitudes.internal.bearer_token"
+	"github.com/multitudes/otel-collector/multitudesauthextension"
+)
 
 // redactToken shows the first 4 characters of a Bearer token followed by ***
 // so log readers can confirm which key is in use without exposing the full secret.
@@ -76,14 +74,14 @@ func (e *multitudesExporter) ConsumeMetrics(ctx context.Context, md pmetric.Metr
 
 		token := e.cfg.FallbackToken
 		source := "fallback"
-		if v, ok := rm.Resource().Attributes().Get(internalApiKeyAttr); ok {
+		if v, ok := rm.Resource().Attributes().Get(multitudesauthextension.InternalApiKeyAttr); ok {
 			if k := v.AsString(); k != "" {
 				token = k
 				source = "per-client"
 			}
 		}
 		// Strip the internal attribute so it is never forwarded in the payload.
-		rm.Resource().Attributes().Remove(internalApiKeyAttr)
+		rm.Resource().Attributes().Remove(multitudesauthextension.InternalApiKeyAttr)
 		e.logger.Info("exporter: resolved Bearer token for export",
 			zap.String("source", source),
 			zap.String("token_prefix", redactToken(token)),
@@ -151,6 +149,13 @@ func (e *multitudesExporter) exportWithToken(ctx context.Context, md pmetric.Met
 				return nil
 			}
 			lastErr = fmt.Errorf("unexpected status %d", resp.StatusCode)
+			// Permanent client errors (4xx except 408 Request Timeout and
+			// 429 Too Many Requests) will not succeed on retry; stop immediately.
+			if resp.StatusCode >= 400 && resp.StatusCode < 500 &&
+				resp.StatusCode != http.StatusRequestTimeout &&
+				resp.StatusCode != http.StatusTooManyRequests {
+				break
+			}
 		}
 
 		if !retryConfig.Enabled || time.Now().After(deadline) {

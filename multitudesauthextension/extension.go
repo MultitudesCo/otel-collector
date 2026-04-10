@@ -71,14 +71,16 @@ func ContextWithApiKey(ctx context.Context, token string) context.Context {
 }
 
 // extractBearer pulls the Bearer token out of the Authorization header.
-// Checks both lowercase and title-case forms since different OTel Collector
-// versions normalise header keys differently.
+// Both the header key and the "Bearer " scheme prefix are matched
+// case-insensitively; the token value itself is returned as-is.
 func extractBearer(headers map[string][]string) string {
 	for k, vals := range headers {
 		if strings.ToLower(k) == "authorization" {
 			for _, v := range vals {
-				if after, ok := strings.CutPrefix(v, "Bearer "); ok {
-					if t := strings.TrimSpace(after); t != "" {
+				if after, ok := strings.CutPrefix(strings.ToLower(v), "bearer "); ok {
+					// after is from the lowercased string; re-slice the original
+					// value at the same offset so the token casing is preserved.
+					if t := strings.TrimSpace(v[len(v)-len(after):]); t != "" {
 						return t
 					}
 				}

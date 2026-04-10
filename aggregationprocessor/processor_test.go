@@ -1392,6 +1392,98 @@ func TestConsumeMetrics_NoInjectionWithoutContextToken(t *testing.T) {
 	}
 }
 
+// TestConsumeMetrics_StripClientSuppliedApiKey verifies that a client-supplied
+// internal API key attribute is always removed, even when no context token is
+// present, so clients cannot smuggle a token through the resource attributes.
+func TestConsumeMetrics_StripClientSuppliedApiKey(t *testing.T) {
+	sink := &consumertest.MetricsSink{}
+	cfg := &Config{
+		AttributeKey:        "user.email",
+		AggregationInterval: time.Hour,
+		EmitInterval:        time.Second,
+	}
+
+	factory := NewFactory()
+	set := processortest.NewNopSettings()
+	proc, err := factory.CreateMetrics(context.Background(), set, cfg, sink)
+	if err != nil {
+		t.Fatalf("Failed to create processor: %v", err)
+	}
+	if err := proc.Start(context.Background(), componenttest.NewNopHost()); err != nil {
+		t.Fatalf("Failed to start processor: %v", err)
+	}
+	defer proc.Shutdown(context.Background())
+
+	md := createTestMetrics("dev@example.com", "test.metric", 1.0)
+	// Simulate a client pre-setting the internal attribute directly.
+	md.ResourceMetrics().At(0).Resource().Attributes().PutStr(
+		multitudesauthextension.InternalApiKeyAttr, "client-injected-token",
+	)
+
+	// Plain context — no token from the auth extension.
+	if err := proc.ConsumeMetrics(context.Background(), md); err != nil {
+		t.Fatalf("ConsumeMetrics error: %v", err)
+	}
+
+	ap := proc.(*aggregationProcessor)
+	ap.aggregator.mu.RLock()
+	defer ap.aggregator.mu.RUnlock()
+
+	for _, agg := range ap.aggregator.metrics {
+		if _, ok := agg.resourceAttrs.Get(multitudesauthextension.InternalApiKeyAttr); ok {
+			t.Errorf("client-supplied %q must be stripped when no context token is present", multitudesauthextension.InternalApiKeyAttr)
+		}
+	}
+}
+
+// TestConsumeMetrics_ContextTokenOverridesClientSuppliedApiKey verifies that
+// when the auth extension places a token in context, it overwrites any
+// client-supplied value of the internal attribute.
+func TestConsumeMetrics_ContextTokenOverridesClientSuppliedApiKey(t *testing.T) {
+	sink := &consumertest.MetricsSink{}
+	cfg := &Config{
+		AttributeKey:        "user.email",
+		AggregationInterval: time.Hour,
+		EmitInterval:        time.Second,
+	}
+
+	factory := NewFactory()
+	set := processortest.NewNopSettings()
+	proc, err := factory.CreateMetrics(context.Background(), set, cfg, sink)
+	if err != nil {
+		t.Fatalf("Failed to create processor: %v", err)
+	}
+	if err := proc.Start(context.Background(), componenttest.NewNopHost()); err != nil {
+		t.Fatalf("Failed to start processor: %v", err)
+	}
+	defer proc.Shutdown(context.Background())
+
+	md := createTestMetrics("dev@example.com", "test.metric", 1.0)
+	// Client tries to set a different token directly on the resource.
+	md.ResourceMetrics().At(0).Resource().Attributes().PutStr(
+		multitudesauthextension.InternalApiKeyAttr, "client-injected-token",
+	)
+
+	ctx := multitudesauthextension.ContextWithApiKey(context.Background(), "real-verified-token")
+	if err := proc.ConsumeMetrics(ctx, md); err != nil {
+		t.Fatalf("ConsumeMetrics error: %v", err)
+	}
+
+	ap := proc.(*aggregationProcessor)
+	ap.aggregator.mu.RLock()
+	defer ap.aggregator.mu.RUnlock()
+
+	for _, agg := range ap.aggregator.metrics {
+		v, ok := agg.resourceAttrs.Get(multitudesauthextension.InternalApiKeyAttr)
+		if !ok {
+			t.Fatalf("Expected %q to be set", multitudesauthextension.InternalApiKeyAttr)
+		}
+		if got := v.AsString(); got != "real-verified-token" {
+			t.Errorf("got %q, want %q — context token must override client-supplied value", got, "real-verified-token")
+		}
+	}
+}
+
 // TestGetAndClearCompletedMetrics_GroupsByApiKey verifies that completed metrics
 // carrying different API keys in their resource attributes are emitted as
 // separate ResourceMetrics blocks.
