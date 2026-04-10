@@ -73,10 +73,13 @@ func (e *multitudesExporter) ConsumeMetrics(ctx context.Context, md pmetric.Metr
 		}
 		// Strip the internal attribute so it is never forwarded in the payload.
 		rm.Resource().Attributes().Remove(multitudesauthextension.InternalApiKeyAttr)
-		e.logger.Info("exporter: resolved Bearer token for export",
-			zap.String("source", source),
-			zap.Bool("has_token", token != ""),
-		)
+		if token != "" {
+			e.logger.Info("exporter: resolved Bearer token for export",
+				zap.String("source", source),
+			)
+		} else {
+			e.logger.Warn("exporter: no Bearer token resolved for export")
+		}
 
 		if _, seen := byToken[token]; !seen {
 			byToken[token] = pmetric.NewMetrics()
@@ -106,7 +109,7 @@ func (e *multitudesExporter) exportWithToken(ctx context.Context, md pmetric.Met
 		e.logger.Warn("No Bearer token available for export batch; dropping metrics",
 			zap.Int("data_points", md.DataPointCount()),
 		)
-		return nil
+		return fmt.Errorf("missing Bearer token: auth extension did not provide credentials (data_points=%d)", md.DataPointCount())
 	}
 
 	body, err := e.marshaler.MarshalMetrics(md)
