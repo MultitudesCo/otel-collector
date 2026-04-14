@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"go.opentelemetry.io/collector/component"
@@ -17,9 +18,10 @@ import (
 )
 
 type multitudesExporter struct {
-	cfg    *Config
-	logger *zap.Logger
-	client *http.Client
+	cfg      *Config
+	logger   *zap.Logger
+	client   *http.Client
+	endpoint string
 
 	marshaler pmetric.Marshaler
 }
@@ -34,8 +36,13 @@ func newExporter(cfg *Config, logger *zap.Logger) *multitudesExporter {
 
 func (e *multitudesExporter) Start(_ context.Context, _ component.Host) error {
 	e.client = &http.Client{Timeout: e.cfg.Timeout}
+	endpoint := strings.TrimRight(e.cfg.Endpoint, "/")
+	if !strings.HasSuffix(endpoint, "/v1/metrics") {
+		endpoint = endpoint + "/v1/metrics"
+	}
+	e.endpoint = endpoint
 	e.logger.Info("Multitudes exporter started",
-		zap.String("endpoint", e.cfg.Endpoint),
+		zap.String("endpoint", e.endpoint),
 		zap.Bool("fallback_token_set", e.cfg.FallbackToken != ""),
 	)
 	return nil
@@ -156,7 +163,7 @@ func (e *multitudesExporter) exportWithToken(ctx context.Context, md pmetric.Met
 			return err
 		}
 
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, e.cfg.Endpoint, bytes.NewReader(body))
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, e.endpoint, bytes.NewReader(body))
 		if err != nil {
 			return fmt.Errorf("create request: %w", err)
 		}

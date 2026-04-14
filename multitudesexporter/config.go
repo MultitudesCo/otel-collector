@@ -8,7 +8,8 @@ import (
 
 // Config defines configuration for the Multitudes exporter.
 type Config struct {
-	// Endpoint is the Multitudes OTLP ingestion URL.
+	// Endpoint is the Multitudes OTLP ingestion base URL.
+	// The exporter automatically appends /v1/metrics per the OTLP/HTTP specification.
 	// e.g. "https://integrations.multitudes.co/ai/otel"
 	Endpoint string `mapstructure:"endpoint"`
 
