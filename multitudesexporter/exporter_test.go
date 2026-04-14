@@ -72,8 +72,9 @@ func newTestExporter(endpoint, fallbackToken string) (*multitudesExporter, error
 		},
 	}
 	exp := newExporter(cfg, zap.NewNop())
-	exp.client = &http.Client{Timeout: 5 * time.Second}
-	exp.marshaler = &pmetric.JSONMarshaler{}
+	if err := exp.Start(context.Background(), nil); err != nil {
+		return nil, err
+	}
 	return exp, nil
 }
 
@@ -298,8 +299,9 @@ func TestExportWithToken_RetriesOnFailure(t *testing.T) {
 		},
 	}
 	exp := newExporter(cfg, zap.NewNop())
-	exp.client = &http.Client{Timeout: 5 * time.Second}
-	exp.marshaler = &pmetric.JSONMarshaler{}
+	if err := exp.Start(context.Background(), nil); err != nil {
+		t.Fatalf("Start() error: %v", err)
+	}
 
 	md := makeMetrics(nil, "test.metric", 1.0)
 	if err := exp.exportWithToken(context.Background(), md, "token"); err != nil {
@@ -328,8 +330,9 @@ func TestExportWithToken_ReturnsErrorAfterExhaustedRetries(t *testing.T) {
 		},
 	}
 	exp := newExporter(cfg, zap.NewNop())
-	exp.client = &http.Client{Timeout: 5 * time.Second}
-	exp.marshaler = &pmetric.JSONMarshaler{}
+	if err := exp.Start(context.Background(), nil); err != nil {
+		t.Fatalf("Start() error: %v", err)
+	}
 
 	md := makeMetrics(nil, "test.metric", 1.0)
 	if err := exp.exportWithToken(context.Background(), md, "token"); err == nil {
@@ -355,8 +358,9 @@ func newRetryExporter(t *testing.T, srv *httptest.Server) *multitudesExporter {
 		RetryOnFailure: retryConfig(),
 	}
 	exp := newExporter(cfg, zap.NewNop())
-	exp.client = &http.Client{Timeout: 5 * time.Second}
-	exp.marshaler = &pmetric.JSONMarshaler{}
+	if err := exp.Start(context.Background(), nil); err != nil {
+		t.Fatalf("Start() error: %v", err)
+	}
 	return exp
 }
 
@@ -552,5 +556,64 @@ func TestConsumeMetrics_OriginalMdRetainsInternalAttrAfterFailure(t *testing.T) 
 	}
 	if v.AsString() != "per-client-token" {
 		t.Errorf("attribute value = %q, want %q", v.AsString(), "per-client-token")
+	}
+}
+
+func TestStart_NormalizesEndpointV1Metrics(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "base URL without /v1/metrics",
+			input:    "https://integrations.multitudes.co/ai/otel",
+			expected: "https://integrations.multitudes.co/ai/otel/v1/metrics",
+		},
+		{
+			name:     "URL already ending in /v1/metrics",
+			input:    "https://integrations.multitudes.co/ai/otel/v1/metrics",
+			expected: "https://integrations.multitudes.co/ai/otel/v1/metrics",
+		},
+		{
+			name:     "URL ending in /v1/metrics/ with trailing slash",
+			input:    "https://integrations.multitudes.co/ai/otel/v1/metrics/",
+			expected: "https://integrations.multitudes.co/ai/otel/v1/metrics",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := &Config{
+				Endpoint: tc.input,
+				Timeout:  5 * time.Second,
+			}
+			exp := newExporter(cfg, zap.NewNop())
+			if err := exp.Start(context.Background(), nil); err != nil {
+				t.Fatalf("Start() error: %v", err)
+			}
+			if exp.endpoint != tc.expected {
+				t.Errorf("endpoint = %q, want %q", exp.endpoint, tc.expected)
+			}
+		})
+	}
+}
+
+func TestConsumeMetrics_SendsToV1MetricsPath(t *testing.T) {
+	var capturedPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedPath = r.URL.Path
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	exp, _ := newTestExporter(srv.URL, "test-token")
+	md := makeMetrics(map[string]string{"user.email": "dev@example.com"}, "test.metric", 1.0)
+
+	if err := exp.ConsumeMetrics(context.Background(), md); err != nil {
+		t.Fatalf("ConsumeMetrics error: %v", err)
+	}
+
+	if capturedPath != "/v1/metrics" {
+		t.Errorf("request path = %q, want %q", capturedPath, "/v1/metrics")
 	}
 }
