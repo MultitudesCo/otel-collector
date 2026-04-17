@@ -1,5 +1,6 @@
 extensions:
   health_check:
+    endpoint: 0.0.0.0:13133
   pprof:
     endpoint: 127.0.0.1:1777
   zpages:
@@ -32,12 +33,12 @@ processors:
 
   aggregation:
     attribute_key: "user.email"
-    aggregation_interval: 5m
-    emit_interval: 1m
+    aggregation_interval: 10s
+    emit_interval: 5s
 
   # Batch processor - flushes completed buckets promptly
   batch:
-    timeout: 5m
+    timeout: 10s
     send_batch_size: 20000      # Send early if batch reaches 20k metrics (safety valve)
     send_batch_max_size: 25000  # Hard limit
 
@@ -45,7 +46,7 @@ exporters:
   multitudes:
     endpoint: ${env:MULTITUDES_INTEGRATION_ENDPOINT}
     fallback_token: ${env:MULTITUDES_INTEGRATION_TOKEN}
-    timeout: 30s
+    timeout: 10s
     retry_on_failure:
       enabled: true
       initial_interval: 5s
