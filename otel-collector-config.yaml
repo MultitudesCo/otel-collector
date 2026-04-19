@@ -32,13 +32,13 @@ processors:
     spike_limit_mib: 256
 
   aggregation:
-    attribute_key: "user.email"
-    aggregation_interval: 10s
-    emit_interval: 5s
+    attribute_key: "user.email"        # Group by user email
+    aggregation_interval: 5m
+    emit_interval: 1m
 
   # Batch processor - flushes completed buckets promptly
   batch:
-    timeout: 10s
+    timeout: 5m
     send_batch_size: 20000      # Send early if batch reaches 20k metrics (safety valve)
     send_batch_max_size: 25000  # Hard limit
 
@@ -46,7 +46,7 @@ exporters:
   multitudes:
     endpoint: ${env:MULTITUDES_INTEGRATION_ENDPOINT}
     fallback_token: ${env:MULTITUDES_INTEGRATION_TOKEN}
-    timeout: 10s
+    timeout: 30s
     retry_on_failure:
       enabled: true
       initial_interval: 5s
