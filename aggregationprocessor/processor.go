@@ -11,6 +11,8 @@ import (
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/processor"
 	"go.uber.org/zap"
+
+	"github.com/multitudes/otel-collector/multitudesauthextension"
 )
 
 func readVersion() string {
@@ -22,11 +24,11 @@ func readVersion() string {
 }
 
 type aggregationProcessor struct {
-	logger     *zap.Logger
-	config     *Config
-	aggregator *MetricAggregator
+	logger       *zap.Logger
+	config       *Config
+	aggregator   *MetricAggregator
 	nextConsumer consumer.Metrics
-	cancel     context.CancelFunc
+	cancel       context.CancelFunc
 }
 
 func newAggregationProcessor(
@@ -77,12 +79,30 @@ func (ap *aggregationProcessor) Shutdown(ctx context.Context) error {
 	return nil
 }
 
+// Capabilities reports MutatesData: true because ConsumeMetrics injects the
+// client's Bearer token as a resource attribute on the incoming pmetric.Metrics.
 func (ap *aggregationProcessor) Capabilities() consumer.Capabilities {
-	return consumer.Capabilities{MutatesData: false}
+	return consumer.Capabilities{MutatesData: true}
 }
 
 func (ap *aggregationProcessor) ConsumeMetrics(ctx context.Context, md pmetric.Metrics) error {
-	// Add metrics to the aggregator
+	// Always strip any client-supplied value of the internal attribute first so
+	// a malicious or misconfigured client cannot inject a token by setting it
+	// directly on their resource attributes.
+	// If the multitudes_auth extension placed a verified Bearer token in ctx,
+	// write it back as the sole authoritative value.
+	token, hasToken := multitudesauthextension.GetApiKeyFromContext(ctx)
+	for i := 0; i < md.ResourceMetrics().Len(); i++ {
+		attrs := md.ResourceMetrics().At(i).Resource().Attributes()
+		attrs.Remove(multitudesauthextension.InternalApiKeyAttr)
+		if hasToken {
+			attrs.PutStr(multitudesauthextension.InternalApiKeyAttr, token)
+		}
+	}
+	if hasToken {
+		debugLog("DEBUG: Injected API key into", md.ResourceMetrics().Len(), "resource metric(s)")
+	}
+
 	ap.aggregator.AddMetrics(md)
 
 	ap.logger.Debug("Received metrics for aggregation",

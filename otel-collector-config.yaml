@@ -1,10 +1,29 @@
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+  pprof:
+    endpoint: 127.0.0.1:1777
+  zpages:
+    endpoint: 0.0.0.0:55679
+
+  # multitudes_auth extracts the Bearer token from each incoming OTLP request's
+  # Authorization header and passes it through the pipeline. Clients configure:
+  #   OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer <api-key>
+  # If a client sends no Authorization header, the exporter falls back to
+  # MULTITUDES_INTEGRATION_TOKEN (backward-compatible central-token mode).
+  multitudes_auth:
+
 receivers:
   otlp:
     protocols:
       grpc:
         endpoint: 0.0.0.0:4317
+        auth:
+          authenticator: multitudes_auth
       http:
         endpoint: 0.0.0.0:4318
+        auth:
+          authenticator: multitudes_auth
 
 processors:
   memory_limiter:
@@ -12,8 +31,6 @@ processors:
     limit_mib: 512
     spike_limit_mib: 256
 
-  # Aggregation processor - aggregates metrics by user email over time windows
-  # Groups metrics by user.email attribute and sums values within each time window
   aggregation:
     attribute_key: "user.email"        # Group by user email
     aggregation_interval: 5m
@@ -26,11 +43,9 @@ processors:
     send_batch_max_size: 25000  # Hard limit
 
 exporters:
-  otlphttp/integration:
+  multitudes:
     endpoint: ${env:MULTITUDES_INTEGRATION_ENDPOINT}
-    encoding: json
-    headers:
-      Authorization: "Bearer ${env:MULTITUDES_INTEGRATION_TOKEN}"
+    fallback_token: ${env:MULTITUDES_INTEGRATION_TOKEN}
     timeout: 30s
     retry_on_failure:
       enabled: true
@@ -38,17 +53,10 @@ exporters:
       max_interval: 30s
       max_elapsed_time: 300s
 
-extensions:
-  health_check:
-  pprof:
-    endpoint: 127.0.0.1:1777
-  zpages:
-    endpoint: 0.0.0.0:55679
-
 service:
-  extensions: [health_check, pprof, zpages]
+  extensions: [health_check, pprof, zpages, multitudes_auth]
   pipelines:
     metrics:
       receivers: [otlp]
       processors: [memory_limiter, aggregation, batch]
-      exporters: [otlphttp/integration]
+      exporters: [multitudes]

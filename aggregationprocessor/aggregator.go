@@ -9,6 +9,8 @@ import (
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.uber.org/zap"
+
+	"github.com/multitudes/otel-collector/multitudesauthextension"
 )
 
 func isDebug() bool {
@@ -295,7 +297,13 @@ func (ma *MetricAggregator) processGauge(gauge pmetric.Gauge, metricName string,
 	}
 }
 
-// GetAndClearCompletedMetrics returns aggregated metrics for completed time buckets
+// GetAndClearCompletedMetrics returns aggregated metrics for completed time buckets.
+//
+// When per-client API keys are in use, completed metrics are grouped by the API
+// key stored in their resource attributes. Each unique API key produces its own
+// ResourceMetrics block so the exporter can apply the correct Authorization
+// header per group. Metrics with no API key are grouped together under the
+// empty-string key and the exporter will use its configured fallback token.
 func (ma *MetricAggregator) GetAndClearCompletedMetrics(now time.Time) pmetric.Metrics {
 	ma.mu.Lock()
 	defer ma.mu.Unlock()
@@ -334,65 +342,87 @@ func (ma *MetricAggregator) GetAndClearCompletedMetrics(now time.Time) pmetric.M
 		}
 	}
 
-	// Build the metrics output
-	rm := md.ResourceMetrics().AppendEmpty()
+	// Group completed metrics by (API key, resource attributes) so that:
+	//   - metrics from different clients (different API keys) are split into
+	//     separate ResourceMetrics blocks for per-client auth at export time;
+	//   - metrics from the same client but from distinct resources (different
+	//     service.name, host.name, etc.) also get their own ResourceMetrics
+	//     block, preserving the original resource metadata for each resource.
+	// An empty API key is used for metrics with no token; the exporter falls
+	// back to MULTITUDES_INTEGRATION_TOKEN for those.
+	type apiKeyGroup struct {
+		resourceAttrs pcommon.Map
+		metrics       []*aggregatedMetric
+	}
+	// groups is keyed by apiKey + "\x00" + serialized resource attrs (excluding
+	// the internal API key attr, which is already captured in the first half).
+	groups := make(map[string]*apiKeyGroup)
 
-	// Copy resource attributes from the first completed metric.
-	// All metrics in a session share the same resource (service.name, etc.),
-	// so using any one of them as the source is correct.
 	for _, agg := range completedMetrics {
-		agg.resourceAttrs.CopyTo(rm.Resource().Attributes())
-		break
+		apiKey := ""
+		if v, ok := agg.resourceAttrs.Get(multitudesauthextension.InternalApiKeyAttr); ok {
+			apiKey = v.AsString()
+		}
+		groupKey := apiKey + "\x00" + serializeResourceKey(agg.resourceAttrs)
+		if _, exists := groups[groupKey]; !exists {
+			g := &apiKeyGroup{resourceAttrs: pcommon.NewMap()}
+			agg.resourceAttrs.CopyTo(g.resourceAttrs)
+			groups[groupKey] = g
+		}
+		groups[groupKey].metrics = append(groups[groupKey].metrics, agg)
 	}
 
-	sm := rm.ScopeMetrics().AppendEmpty()
-	sm.Scope().SetName("aggregationprocessor")
+	// Build one ResourceMetrics per API key group.
+	for _, group := range groups {
+		rm := md.ResourceMetrics().AppendEmpty()
+		group.resourceAttrs.CopyTo(rm.Resource().Attributes())
 
-	// Group by metric name
-	metricsByName := make(map[string][]*aggregatedMetric)
-	for _, agg := range completedMetrics {
-		metricsByName[agg.key.metricName] = append(metricsByName[agg.key.metricName], agg)
-	}
+		sm := rm.ScopeMetrics().AppendEmpty()
+		sm.Scope().SetName("aggregationprocessor")
 
-	// Create aggregated metrics
-	for metricName, aggs := range metricsByName {
-		if len(aggs) == 0 {
-			continue
+		// Group by metric name within this API key group.
+		metricsByName := make(map[string][]*aggregatedMetric)
+		for _, agg := range group.metrics {
+			metricsByName[agg.key.metricName] = append(metricsByName[agg.key.metricName], agg)
 		}
 
-		// Use the first aggregated metric as a template
-		template := aggs[0]
-
-		metric := sm.Metrics().AppendEmpty()
-		metric.SetName(metricName)
-		metric.SetUnit(template.unit)
-		metric.SetDescription(template.description)
-
-		switch template.metricType {
-		case pmetric.MetricTypeSum:
-			sum := metric.SetEmptySum()
-			sum.SetIsMonotonic(template.isMonotonic)
-			sum.SetAggregationTemporality(pmetric.AggregationTemporalityDelta)
-
-			for _, agg := range aggs {
-				dp := sum.DataPoints().AppendEmpty()
-				dp.SetDoubleValue(agg.sum)
-				dp.SetTimestamp(pcommon.Timestamp(agg.lastTimestamp))
-				dp.SetStartTimestamp(pcommon.Timestamp(agg.startTimestamp))
-				agg.dpAttrs.CopyTo(dp.Attributes())
-				// Add the aggregation attribute to the data point
-				dp.Attributes().PutStr(ma.attributeKey, agg.key.attributeValue)
+		for metricName, aggs := range metricsByName {
+			if len(aggs) == 0 {
+				continue
 			}
 
-		case pmetric.MetricTypeGauge:
-			gauge := metric.SetEmptyGauge()
+			template := aggs[0]
 
-			for _, agg := range aggs {
-				dp := gauge.DataPoints().AppendEmpty()
-				dp.SetDoubleValue(agg.sum)
-				dp.SetTimestamp(pcommon.Timestamp(agg.lastTimestamp))
-				agg.dpAttrs.CopyTo(dp.Attributes())
-				dp.Attributes().PutStr(ma.attributeKey, agg.key.attributeValue)
+			metric := sm.Metrics().AppendEmpty()
+			metric.SetName(metricName)
+			metric.SetUnit(template.unit)
+			metric.SetDescription(template.description)
+
+			switch template.metricType {
+			case pmetric.MetricTypeSum:
+				sum := metric.SetEmptySum()
+				sum.SetIsMonotonic(template.isMonotonic)
+				sum.SetAggregationTemporality(pmetric.AggregationTemporalityDelta)
+
+				for _, agg := range aggs {
+					dp := sum.DataPoints().AppendEmpty()
+					dp.SetDoubleValue(agg.sum)
+					dp.SetTimestamp(pcommon.Timestamp(agg.lastTimestamp))
+					dp.SetStartTimestamp(pcommon.Timestamp(agg.startTimestamp))
+					agg.dpAttrs.CopyTo(dp.Attributes())
+					dp.Attributes().PutStr(ma.attributeKey, agg.key.attributeValue)
+				}
+
+			case pmetric.MetricTypeGauge:
+				gauge := metric.SetEmptyGauge()
+
+				for _, agg := range aggs {
+					dp := gauge.DataPoints().AppendEmpty()
+					dp.SetDoubleValue(agg.sum)
+					dp.SetTimestamp(pcommon.Timestamp(agg.lastTimestamp))
+					agg.dpAttrs.CopyTo(dp.Attributes())
+					dp.Attributes().PutStr(ma.attributeKey, agg.key.attributeValue)
+				}
 			}
 		}
 	}
@@ -428,6 +458,21 @@ func serializeAttributes(attrs pcommon.Map) string {
 	result := ""
 	attrs.Range(func(k string, v pcommon.Value) bool {
 		result += k + "=" + v.AsString() + ";"
+		return true
+	})
+	return result
+}
+
+// serializeResourceKey serializes resource attributes for use as the resource
+// portion of a grouping key, excluding the internal API key attribute (which is
+// captured separately as the first half of the compound group key and is not
+// part of the resource identity).
+func serializeResourceKey(attrs pcommon.Map) string {
+	result := ""
+	attrs.Range(func(k string, v pcommon.Value) bool {
+		if k != multitudesauthextension.InternalApiKeyAttr {
+			result += k + "=" + v.AsString() + ";"
+		}
 		return true
 	})
 	return result

@@ -1,0 +1,215 @@
+package multitudesexporter
+
+import (
+	"bytes"
+	"context"
+	"fmt"
+	"io"
+	"net/http"
+	"strings"
+	"time"
+
+	"go.opentelemetry.io/collector/component"
+	"go.opentelemetry.io/collector/consumer"
+	"go.opentelemetry.io/collector/pdata/pmetric"
+	"go.uber.org/zap"
+
+	"github.com/multitudes/otel-collector/multitudesauthextension"
+)
+
+type multitudesExporter struct {
+	cfg      *Config
+	logger   *zap.Logger
+	client   *http.Client
+	endpoint string
+
+	marshaler pmetric.Marshaler
+}
+
+func newExporter(cfg *Config, logger *zap.Logger) *multitudesExporter {
+	return &multitudesExporter{
+		cfg:       cfg,
+		logger:    logger,
+		marshaler: &pmetric.JSONMarshaler{},
+	}
+}
+
+func (e *multitudesExporter) Start(_ context.Context, _ component.Host) error {
+	e.client = &http.Client{Timeout: e.cfg.Timeout}
+	endpoint := strings.TrimRight(e.cfg.Endpoint, "/")
+	if !strings.HasSuffix(endpoint, "/v1/metrics") {
+		endpoint = endpoint + "/v1/metrics"
+	}
+	e.endpoint = endpoint
+	e.logger.Info("Multitudes exporter started",
+		zap.String("endpoint", e.endpoint),
+		zap.Bool("fallback_token_set", e.cfg.FallbackToken != ""),
+	)
+	return nil
+}
+
+func (e *multitudesExporter) Capabilities() consumer.Capabilities {
+	return consumer.Capabilities{MutatesData: true} // we strip the internal api key attribute
+}
+
+func (e *multitudesExporter) Shutdown(_ context.Context) error {
+	if e.client != nil {
+		e.client.CloseIdleConnections()
+	}
+	return nil
+}
+
+// ConsumeMetrics is called by the OTel pipeline with each batch of aggregated
+// metrics. Each ResourceMetrics block may carry a different per-client Bearer
+// token in the internal resource attribute set by the aggregation processor.
+// We split by token and make one HTTP call per unique token.
+func (e *multitudesExporter) ConsumeMetrics(ctx context.Context, md pmetric.Metrics) error {
+	// Partition ResourceMetrics by Bearer token, tracking the original index of
+	// each rm so we can remove successfully-exported entries from md before
+	// returning an error. Because Capabilities() declares MutatesData:true, the
+	// pipeline gives us our own copy; the retry_sender reuses that same copy, so
+	// trimming committed resource metrics here prevents duplication on retry.
+	type tokenBatch struct {
+		metrics   pmetric.Metrics
+		rmIndices []int // indices into md.ResourceMetrics()
+	}
+	byToken := make(map[string]*tokenBatch)
+	tokenOrder := make([]string, 0)
+
+	for i := 0; i < md.ResourceMetrics().Len(); i++ {
+		rm := md.ResourceMetrics().At(i)
+
+		token := e.cfg.FallbackToken
+		source := "fallback"
+		if v, ok := rm.Resource().Attributes().Get(multitudesauthextension.InternalApiKeyAttr); ok {
+			if k := v.AsString(); k != "" {
+				token = k
+				source = "per-client"
+			}
+		}
+		if token != "" {
+			e.logger.Info("exporter: resolved Bearer token for export",
+				zap.String("source", source),
+			)
+		} else {
+			e.logger.Warn("exporter: no Bearer token resolved for export")
+		}
+
+		if _, seen := byToken[token]; !seen {
+			byToken[token] = &tokenBatch{metrics: pmetric.NewMetrics()}
+			tokenOrder = append(tokenOrder, token)
+		}
+		dest := byToken[token].metrics.ResourceMetrics().AppendEmpty()
+		rm.CopyTo(dest)
+		// Strip the internal attribute only from the copy so it is never forwarded
+		// in the payload. The original rm in md retains it for retry token resolution.
+		dest.Resource().Attributes().Remove(multitudesauthextension.InternalApiKeyAttr)
+		byToken[token].rmIndices = append(byToken[token].rmIndices, i)
+	}
+
+	successfulIndices := make(map[int]bool)
+	var firstErr error
+	for _, token := range tokenOrder {
+		batch := byToken[token]
+		if err := e.exportWithToken(ctx, batch.metrics, token); err != nil {
+			e.logger.Error("Failed to export metrics",
+				zap.Int("data_points", batch.metrics.DataPointCount()),
+				zap.Error(err),
+			)
+			if firstErr == nil {
+				firstErr = err
+			}
+		} else {
+			for _, idx := range batch.rmIndices {
+				successfulIndices[idx] = true
+			}
+		}
+	}
+
+	// Remove successfully-exported resource metrics so that an upstream retry
+	// only covers the batches that actually failed.
+	if firstErr != nil {
+		pos := 0
+		md.ResourceMetrics().RemoveIf(func(_ pmetric.ResourceMetrics) bool {
+			remove := successfulIndices[pos]
+			pos++
+			return remove
+		})
+	}
+
+	return firstErr
+}
+
+func (e *multitudesExporter) exportWithToken(ctx context.Context, md pmetric.Metrics, token string) error {
+	if token == "" {
+		e.logger.Warn("No Bearer token available for export batch; dropping metrics",
+			zap.Int("data_points", md.DataPointCount()),
+		)
+		return nil
+	}
+
+	body, err := e.marshaler.MarshalMetrics(md)
+	if err != nil {
+		return fmt.Errorf("marshal metrics: %w", err)
+	}
+
+	var lastErr error
+	retryConfig := e.cfg.RetryOnFailure
+	backoff := retryConfig.InitialInterval
+	deadline := time.Now().Add(retryConfig.MaxElapsedTime)
+
+	for attempt := 0; ; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, e.endpoint, bytes.NewReader(body))
+		if err != nil {
+			return fmt.Errorf("create request: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+token)
+
+		resp, err := e.client.Do(req)
+		if err != nil {
+			lastErr = fmt.Errorf("http request: %w", err)
+		} else {
+			_, _ = io.Copy(io.Discard, resp.Body)
+			resp.Body.Close()
+			if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+				return nil
+			}
+			lastErr = fmt.Errorf("unexpected status %d", resp.StatusCode)
+			// Permanent client errors (4xx except 408 Request Timeout and
+			// 429 Too Many Requests) will not succeed on retry; stop immediately.
+			if resp.StatusCode >= 400 && resp.StatusCode < 500 &&
+				resp.StatusCode != http.StatusRequestTimeout &&
+				resp.StatusCode != http.StatusTooManyRequests {
+				break
+			}
+		}
+
+		if !retryConfig.Enabled || time.Now().After(deadline) {
+			break
+		}
+
+		e.logger.Warn("Export attempt failed, will retry",
+			zap.Int("attempt", attempt+1),
+			zap.Duration("backoff", backoff),
+			zap.Error(lastErr),
+		)
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(backoff):
+		}
+
+		backoff *= 2
+		if backoff > retryConfig.MaxInterval {
+			backoff = retryConfig.MaxInterval
+		}
+	}
+
+	return lastErr
+}
