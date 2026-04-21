@@ -1,5 +1,7 @@
 # Multitudes OTel Collector
 
+![Version](https://img.shields.io/github/v/tag/MultitudesCo/otel-collector?label=version&sort=semver)
+
 A custom [OpenTelemetry Collector](https://opentelemetry.io/docs/collector/) that runs in your network, aggregates AI usage metrics from your engineers, and sends them to Multitudes.
 
 This approach means that raw data does not leave your environment.
@@ -25,6 +27,14 @@ Tools like Claude Code emit raw OTLP metrics as engineers work. The Multitudes O
 ```bash
 docker pull ghcr.io/multitudesco/otel-collector:latest
 ```
+
+For production deployments, pin to a specific version instead of `latest` to avoid unexpected updates:
+
+```bash
+docker pull ghcr.io/multitudesco/otel-collector:1.2.0
+```
+
+See the version badge above for the current release.
 
 **2. Run the collector**
 
