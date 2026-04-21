@@ -6,17 +6,17 @@ extensions:
       include_recoverable_errors: true
       recovery_duration: 5m
     http:
-      endpoint: "localhost:13133"
+      endpoint: 0.0.0.0:13133
       status:
         enabled: true
-        path: "/"
+        path: /
         include_attributes: true
       config:
         enabled: true
-        path: "/health/config"
+        path: /health/config
     grpc:
-      endpoint: "localhost:13132"
-      transport: "tcp"
+      endpoint: 0.0.0.0:13132
+      transport: tcp
   pprof:
     endpoint: 127.0.0.1:1777
   zpages:
