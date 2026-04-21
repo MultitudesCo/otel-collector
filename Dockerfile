@@ -2,7 +2,7 @@
 FROM golang:1.26 AS builder
 
 # Install OpenTelemetry Collector Builder
-RUN go install go.opentelemetry.io/collector/cmd/builder@v0.115.0
+RUN go install go.opentelemetry.io/collector/cmd/builder@v0.150.0
 
 WORKDIR /build
 
@@ -39,8 +39,8 @@ COPY otel-collector-config.yaml /etc/otelcol-contrib/otel-collector-config.yaml
 # 4317: OTLP gRPC
 # 4318: OTLP HTTP
 # 55679: zPages diagnostics
-# 13133: Health check
-EXPOSE 4317 4318 55679 13133
+# 13132, 13133: Health check
+EXPOSE 4317 4318 55679 13132 13133
 
 # Default command (can be overridden in docker-compose or ECS)
 ENTRYPOINT ["/otelcol-multitudes"]
