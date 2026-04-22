@@ -1,6 +1,19 @@
 extensions:
-  health_check:
-    endpoint: 0.0.0.0:13133
+  healthcheckv2:
+    use_v2: true
+    component_health:
+      include_permanent_errors: false
+      include_recoverable_errors: true
+      recovery_duration: 5m
+    http:
+      endpoint: 0.0.0.0:13133
+      status:
+        enabled: true
+        path: /
+        include_attributes: true
+    grpc:
+      endpoint: 0.0.0.0:13132
+      transport: tcp
   pprof:
     endpoint: 127.0.0.1:1777
   zpages:
@@ -54,7 +67,7 @@ exporters:
       max_elapsed_time: 300s
 
 service:
-  extensions: [health_check, pprof, zpages, multitudes_auth]
+  extensions: [healthcheckv2, pprof, zpages, multitudes_auth]
   pipelines:
     metrics:
       receivers: [otlp]
