@@ -11,9 +11,6 @@ extensions:
         enabled: true
         path: /
         include_attributes: true
-      config:
-        enabled: true
-        path: /health/config
     grpc:
       endpoint: 0.0.0.0:13132
       transport: tcp
