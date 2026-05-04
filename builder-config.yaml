@@ -20,6 +20,10 @@ processors:
   # Custom aggregation processor - local path
   - gomod: github.com/multitudes/otel-collector/aggregationprocessor v0.0.0
     path: ./aggregationprocessor
+  # Custom logs auth processor — injects bearer token into resource attributes
+  # so it survives the batch processor and is available to the logs exporter.
+  - gomod: github.com/multitudes/otel-collector/multitudeslogsprocessor v0.0.0
+    path: ./multitudeslogsprocessor
 
 exporters:
   - gomod: go.opentelemetry.io/collector/exporter/debugexporter v0.150.0

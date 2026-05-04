@@ -18,6 +18,7 @@ func NewFactory() exporter.Factory {
 		component.MustNewType(Type),
 		createDefaultConfig,
 		exporter.WithMetrics(createMetricsExporter, component.StabilityLevelAlpha),
+		exporter.WithLogs(createLogsExporter, component.StabilityLevelAlpha),
 	)
 }
 
@@ -43,4 +44,16 @@ func createMetricsExporter(
 		return nil, err
 	}
 	return newExporter(oCfg, set.Logger), nil
+}
+
+func createLogsExporter(
+	_ context.Context,
+	set exporter.Settings,
+	cfg component.Config,
+) (exporter.Logs, error) {
+	oCfg := cfg.(*Config)
+	if err := oCfg.Validate(); err != nil {
+		return nil, err
+	}
+	return newLogsExporter(oCfg, set.Logger), nil
 }
