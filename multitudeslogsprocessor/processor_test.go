@@ -234,8 +234,21 @@ func TestLogsProcessorForwardsToNextConsumer(t *testing.T) {
 		t.Fatalf("ConsumeLogs() error = %v", err)
 	}
 
-	if sink.LogRecordCount() != 5 {
-		t.Errorf("Expected 5 log records forwarded, got %d", sink.LogRecordCount())
+	allLogs := sink.AllLogs()
+	if len(allLogs) != 1 {
+		t.Fatalf("Expected 1 log batch, got %d", len(allLogs))
+	}
+
+	got := allLogs[0]
+	if got.ResourceLogs().Len() != 5 {
+		t.Fatalf("Expected 5 ResourceLogs, got %d", got.ResourceLogs().Len())
+	}
+
+	for i := 0; i < got.ResourceLogs().Len(); i++ {
+		body := got.ResourceLogs().At(i).ScopeLogs().At(0).LogRecords().At(0).Body().AsString()
+		if body != "test log record" {
+			t.Errorf("ResourceLogs[%d]: expected body %q, got %q", i, "test log record", body)
+		}
 	}
 }
 
