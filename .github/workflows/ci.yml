@@ -5,7 +5,7 @@ on:
     branches:
       - prod
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [ opened, synchronize, reopened ]
   workflow_dispatch:
     inputs:
       tag:
@@ -19,17 +19,24 @@ concurrency:
 
 jobs:
   build-and-test:
-    name: Build and Test
+    name: Build and Test (${{ matrix.component }})
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        component:
+          - aggregationprocessor
+          - multitudesauthextension
+          - multitudesexporter
+          - multitudeslogsprocessor
     defaults:
       run:
-        working-directory: aggregationprocessor
+        working-directory: ${{ matrix.component }}
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-go@v5
         with:
-          go-version-file: aggregationprocessor/go.mod
+          go-version-file: ${{ matrix.component }}/go.mod
 
       - name: Build
         run: go build ./...
