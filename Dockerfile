@@ -11,6 +11,7 @@ COPY builder-config.yaml .
 COPY aggregationprocessor ./aggregationprocessor
 COPY multitudesauthextension ./multitudesauthextension
 COPY multitudesexporter ./multitudesexporter
+COPY multitudeslogsprocessor ./multitudeslogsprocessor
 
 # Build the custom collector
 RUN CGO_ENABLED=0 builder --config=builder-config.yaml

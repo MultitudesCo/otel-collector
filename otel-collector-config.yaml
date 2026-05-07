@@ -49,6 +49,11 @@ processors:
     aggregation_interval: 5m
     emit_interval: 1m
 
+  # multitudes_logs injects the per-client Bearer token (extracted by
+  # multitudes_auth) into each ResourceLogs resource attribute so it
+  # survives through the batch processor to the exporter.
+  multitudes_logs:
+
   # Batch processor - flushes completed buckets promptly
   batch:
     timeout: 5m
@@ -72,4 +77,8 @@ service:
     metrics:
       receivers: [otlp]
       processors: [memory_limiter, aggregation, batch]
+      exporters: [multitudes]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, multitudes_logs, batch]
       exporters: [multitudes]
