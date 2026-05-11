@@ -102,11 +102,12 @@ To confirm the collector is running and receiving metrics, tail its logs using t
 docker logs -f multitudes-otel-collector
 ```
 
-You should see log output indicating the collector is active. Once AI tool sessions are underway, you will see incoming metric lines appear in the log stream. If no metrics appear, double-check that `settings.json` is saved correctly and that the `OTEL_EXPORTER_OTLP_ENDPOINT` value matches the address the collector is listening on.
+You should see log output indicating the collector is active. Once AI tool sessions are underway, you will see incoming metric lines appear in the log stream. If no metrics appear, double-check your tool config file (for example `~/.claude/settings.json` or `~/.codex/config.toml`) and confirm the configured OTLP endpoint matches the collector address.
+
 
 If you see warning lines like the following in the logs, it means incoming metrics are being dropped because they do not include a `user.email` attribute:
 
-```
+```text
 Warn  dropping data point: required attribute not found  {"attribute_key": "user.email", "metric_name": "claude_code.cost.usage"}
 ```
 
