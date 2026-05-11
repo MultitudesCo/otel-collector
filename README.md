@@ -83,7 +83,7 @@ For a local setup (collector running on the same machine), use `http://localhost
 
 Each person using Codex should enable exporting metrics to the OTLP endpoint. This can be done by configuring a `~/.codex/config.toml` file.
 
-For a local setup (collector running on the same machine), use `http://localhost:4318` as the endpoint:
+For a local setup (collector running on the same machine), use `http://localhost:4318/v1/logs` as the endpoint:
 
 ```toml
 [otel]
