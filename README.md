@@ -11,7 +11,7 @@ This approach means that raw data does not leave your environment.
 Tools like Claude Code emit raw OTLP metrics as engineers work. The Multitudes OTel Collector receives those metrics, aggregates them by user over a time window, and sends the aggregated totals to Multitudes. Individual activity data stays inside your network.
 
 ```
-[Claude Code / AI tools] → [Multitudes OTel Collector] → [Multitudes]
+[AI tools] → [Multitudes OTel Collector] → [Multitudes]
          raw metrics            aggregated by user          totals only
 ```
 
@@ -60,6 +60,8 @@ The collector is now running and listening for OTLP metrics on:
 
 **3. Configure your AI tools**
 
+***Claude Code***
+
 Each person using Claude Code should enable exporting metrics to the OTLP endpoint. This can be done by configuring a `~/.claude/settings.json` file.
 
 For a local setup (collector running on the same machine), use `http://localhost:4318` as the endpoint:
@@ -77,6 +79,19 @@ For a local setup (collector running on the same machine), use `http://localhost
 }
 ```
 
+***Codex***
+
+Each person using Codex should enable exporting metrics to the OTLP endpoint. This can be done by configuring a `~/.codex/config.toml` file.
+
+For a local setup (collector running on the same machine), use `http://localhost:4318/v1/logs` as the endpoint:
+
+```toml
+[otel]
+exporter = { otlp-http = { endpoint = "http://localhost:4318/v1/logs", protocol = "binary" } }
+log_user_prompt = false
+```
+
+
 If the collector is deployed as a shared service (e.g. on ECS or another host), replace `http://localhost:4318` with the hostname and port where that service is reachable, for example, `http://collector.internal:4318`.
 
 **4. Validate the collector is working**
@@ -87,23 +102,28 @@ To confirm the collector is running and receiving metrics, tail its logs using t
 docker logs -f multitudes-otel-collector
 ```
 
-You should see log output indicating the collector is active. Once Claude Code sessions are underway, you will see incoming metric lines appear in the log stream. If no metrics appear, double-check that `settings.json` is saved correctly and that the `OTEL_EXPORTER_OTLP_ENDPOINT` value matches the address the collector is listening on.
+You should see log output indicating the collector is active. Once AI tool sessions are underway, you will see incoming metric lines appear in the log stream. If no metrics appear, double-check your tool config file (for example `~/.claude/settings.json` or `~/.codex/config.toml`) and confirm the configured OTLP endpoint matches the collector address.
+
 
 If you see warning lines like the following in the logs, it means incoming metrics are being dropped because they do not include a `user.email` attribute:
 
-```
+```text
 Warn  dropping data point: required attribute not found  {"attribute_key": "user.email", "metric_name": "claude_code.cost.usage"}
 ```
 
-The most common cause is that users are not logged in to Claude Code with their work email. Ensure each person has authenticated with `claude login` using their work email address before sending metrics. See [Logging in](#logging-in) below.
+The most common cause is that users are not logged in with their work email. Ensure each person has authenticated with the AI tool using their work email address before sending metrics. See [Logging in](#logging-in) below.
 
 ### Using server-managed settings files
 
-Rather than needing each user to manually configure a settings.json file, these can be centrally managed in a number of ways.
+Rather than needing each user to manually configure the settings/config file for each machine, these can be centrally managed in a number of ways.
 
 Refer to the Claude Code documentation for more:
 * [Settings files](https://code.claude.com/docs/en/settings#settings-files)
 * [Server-managed settings](https://code.claude.com/docs/en/server-managed-settings)
+
+Refer to the Codex documentation for more:
+* [Config file](https://developers.openai.com/codex/config-basic)
+* [Managed defaults](https://developers.openai.com/codex/enterprise/managed-configuration#managed-defaults-managed_configtoml)
 
 ### Logging in
 
@@ -197,7 +217,7 @@ The aggregation window and other settings can be adjusted in `otel-collector-con
 
 ## Deployment
 
-Deploy the collector onto your infrastructure and expose the required ports for Claude Code users to export metrics to.
+Deploy the collector onto your infrastructure and expose the required ports for users to export metrics to.
 
 Specific configuration guides for common deployment patterns like ECS Fargate will be coming soon.
 
