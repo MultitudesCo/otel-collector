@@ -8,7 +8,7 @@ require (
 	go.opentelemetry.io/collector/component/componenttest v0.115.0
 	go.opentelemetry.io/collector/consumer v1.21.0
 	go.opentelemetry.io/collector/consumer/consumertest v0.115.0
-	go.opentelemetry.io/collector/pdata v1.21.0
+	go.opentelemetry.io/collector/pdata v1.58.0
 	go.opentelemetry.io/collector/processor v0.115.0
 	go.opentelemetry.io/collector/processor/processortest v0.115.0
 	go.uber.org/zap v1.27.0
