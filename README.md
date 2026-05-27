@@ -6,6 +6,8 @@ A custom [OpenTelemetry Collector](https://opentelemetry.io/docs/collector/) tha
 
 This approach means that raw data does not leave your environment.
 
+Already running your own collector? [Check our docs](https://docs.multitudes.com/integrations/open-telemetry#sending-from-an-existing-collector) for instructions on how to export metrics from your collector to Multitudes.
+
 ## How it works
 
 Tools like Claude Code emit raw OTLP metrics as engineers work. The Multitudes OTel Collector receives those metrics, aggregates them by user over a time window, and sends the aggregated totals to Multitudes. Individual activity data stays inside your network.
