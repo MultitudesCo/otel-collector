@@ -17,7 +17,7 @@ COPY multitudeslogsprocessor ./multitudeslogsprocessor
 RUN CGO_ENABLED=0 builder --config=builder-config.yaml
 
 # Runtime stage - minimal image with just the collector binary
-FROM alpine:3.19
+FROM alpine:3.24
 
 # Install ca-certificates for HTTPS and bash for startup script
 RUN apk --no-cache add ca-certificates bash
