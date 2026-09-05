@@ -6,7 +6,7 @@ require (
 	github.com/multitudes/otel-collector/multitudesauthextension v0.0.0
 	go.opentelemetry.io/collector/component v0.115.0
 	go.opentelemetry.io/collector/component/componenttest v0.115.0
-	go.opentelemetry.io/collector/consumer v1.21.0
+	go.opentelemetry.io/collector/consumer v1.66.0
 	go.opentelemetry.io/collector/consumer/consumertest v0.115.0
 	go.opentelemetry.io/collector/pdata v1.21.0
 	go.opentelemetry.io/collector/processor v0.115.0
