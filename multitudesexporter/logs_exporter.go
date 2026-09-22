@@ -148,6 +148,7 @@ func (e *multitudesLogsExporter) exportLogsWithToken(ctx context.Context, ld plo
 	}
 
 	var lastErr error
+	errorStatus := 0
 	retryConfig := e.cfg.RetryOnFailure
 	backoff := retryConfig.InitialInterval
 	deadline := time.Now().Add(retryConfig.MaxElapsedTime)
@@ -168,16 +169,18 @@ func (e *multitudesLogsExporter) exportLogsWithToken(ctx context.Context, ld plo
 		if err != nil {
 			lastErr = fmt.Errorf("http request: %w", err)
 		} else {
+			bodySnippet, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodyBytes))
 			_, _ = io.Copy(io.Discard, resp.Body)
 			resp.Body.Close()
 			if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 				return nil
 			}
-			lastErr = fmt.Errorf("unexpected status %d", resp.StatusCode)
+			lastErr = fmt.Errorf("unexpected status %d: %s", resp.StatusCode, strings.TrimSpace(string(bodySnippet)))
 			// Permanent client errors (4xx except 408 and 429) won't succeed on retry.
 			if resp.StatusCode >= 400 && resp.StatusCode < 500 &&
 				resp.StatusCode != http.StatusRequestTimeout &&
 				resp.StatusCode != http.StatusTooManyRequests {
+				errorStatus = resp.StatusCode
 				break
 			}
 		}
@@ -204,5 +207,8 @@ func (e *multitudesLogsExporter) exportLogsWithToken(ctx context.Context, ld plo
 		}
 	}
 
+	if errorStatus != 0 {
+		return grpcErrorForHTTPStatus(errorStatus, lastErr.Error())
+	}
 	return lastErr
 }
