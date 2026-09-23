@@ -174,6 +174,21 @@ cd otel-collector
 docker build -t ghcr.io/multitudesco/otel-collector:latest .
 ```
 
+**3. Run the locally built image**
+
+```bash
+docker run -d \
+  --name multitudes-otel-collector \
+  --restart unless-stopped \
+  -e MULTITUDES_INTEGRATION_TOKEN=your_bearer_token_here \
+  -e MULTITUDES_INTEGRATION_ENDPOINT=https://integrations.multitudes.co/ai/otel \
+  -e MULTITUDES_DEBUG=1 \
+  -p 127.0.0.1:4317:4317 \
+  -p 127.0.0.1:4318:4318 \
+  -p 127.0.0.1:13133:13133 \
+  ghcr.io/multitudesco/otel-collector:latest
+```
+
 ## Repository structure
 
 ```

@@ -17,6 +17,10 @@ import (
 	"github.com/multitudes/otel-collector/multitudesauthextension"
 )
 
+// maxErrorBodyBytes bounds how much of a non-2xx response body is read into
+// an error message, so a misbehaving endpoint can't blow up memory or logs.
+const maxErrorBodyBytes = 2048
+
 type multitudesExporter struct {
 	cfg      *Config
 	logger   *zap.Logger
@@ -154,6 +158,7 @@ func (e *multitudesExporter) exportWithToken(ctx context.Context, md pmetric.Met
 	}
 
 	var lastErr error
+	errorStatus := 0
 	retryConfig := e.cfg.RetryOnFailure
 	backoff := retryConfig.InitialInterval
 	deadline := time.Now().Add(retryConfig.MaxElapsedTime)
@@ -174,17 +179,19 @@ func (e *multitudesExporter) exportWithToken(ctx context.Context, md pmetric.Met
 		if err != nil {
 			lastErr = fmt.Errorf("http request: %w", err)
 		} else {
+			bodySnippet, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodyBytes))
 			_, _ = io.Copy(io.Discard, resp.Body)
 			resp.Body.Close()
 			if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 				return nil
 			}
-			lastErr = fmt.Errorf("unexpected status %d", resp.StatusCode)
+			lastErr = fmt.Errorf("unexpected status %d: %s", resp.StatusCode, strings.TrimSpace(string(bodySnippet)))
 			// Permanent client errors (4xx except 408 Request Timeout and
 			// 429 Too Many Requests) will not succeed on retry; stop immediately.
 			if resp.StatusCode >= 400 && resp.StatusCode < 500 &&
 				resp.StatusCode != http.StatusRequestTimeout &&
 				resp.StatusCode != http.StatusTooManyRequests {
+				errorStatus = resp.StatusCode
 				break
 			}
 		}
@@ -211,5 +218,8 @@ func (e *multitudesExporter) exportWithToken(ctx context.Context, md pmetric.Met
 		}
 	}
 
+	if errorStatus != 0 {
+		return grpcErrorForHTTPStatus(errorStatus, lastErr.Error())
+	}
 	return lastErr
 }
