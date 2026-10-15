@@ -263,7 +263,16 @@ func TestConsumeLogs_KeepsResourcesOfOneServiceAndTokenTogether(t *testing.T) {
 	}
 
 	got := requests()
-	if len(got) != 2 {
-		t.Fatalf("got %d requests %+v, want 2 (claude-code x2, and one without a service.name)", len(got), got)
+	want := []exportedRequest{
+		{token: "org-a", services: []string{""}},
+		{token: "org-a", services: []string{"claude-code", "claude-code"}},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got %d requests %+v, want %d %+v", len(got), got, len(want), want)
+	}
+	for i := range want {
+		if got[i].token != want[i].token || strings.Join(got[i].services, ",") != strings.Join(want[i].services, ",") {
+			t.Errorf("request %d = %+v, want %+v", i, got[i], want[i])
+		}
 	}
 }
