@@ -62,14 +62,21 @@ func (e *multitudesLogsExporter) Shutdown(_ context.Context) error {
 // ConsumeLogs is called by the OTel pipeline with each batch of logs.
 // Each ResourceLogs block may carry a different per-client Bearer token in the
 // internal resource attribute set by the multitudeslogsprocessor.
-// We split by token and make one HTTP call per unique token.
+// We split by token and service.name and make one HTTP call per unique pair, so
+// each request holds resources from a single service and the receiving service
+// can attribute it to one provider.
 func (e *multitudesLogsExporter) ConsumeLogs(ctx context.Context, ld plog.Logs) error {
+	type batchKey struct {
+		token   string
+		service string
+	}
 	type tokenBatch struct {
+		token     string
 		logs      plog.Logs
 		rlIndices []int
 	}
-	byToken := make(map[string]*tokenBatch)
-	tokenOrder := make([]string, 0)
+	byKey := make(map[batchKey]*tokenBatch)
+	keyOrder := make([]batchKey, 0)
 
 	for i := 0; i < ld.ResourceLogs().Len(); i++ {
 		rl := ld.ResourceLogs().At(i)
@@ -90,22 +97,28 @@ func (e *multitudesLogsExporter) ConsumeLogs(ctx context.Context, ld plog.Logs) 
 			e.logger.Warn("logs exporter: no Bearer token resolved for export")
 		}
 
-		if _, seen := byToken[token]; !seen {
-			byToken[token] = &tokenBatch{logs: plog.NewLogs()}
-			tokenOrder = append(tokenOrder, token)
+		service := ""
+		if v, ok := rl.Resource().Attributes().Get("service.name"); ok {
+			service = v.AsString()
 		}
-		dest := byToken[token].logs.ResourceLogs().AppendEmpty()
+
+		key := batchKey{token: token, service: service}
+		if _, seen := byKey[key]; !seen {
+			byKey[key] = &tokenBatch{token: token, logs: plog.NewLogs()}
+			keyOrder = append(keyOrder, key)
+		}
+		dest := byKey[key].logs.ResourceLogs().AppendEmpty()
 		rl.CopyTo(dest)
 		// Strip the internal attribute from the copy so it is never forwarded in the payload.
 		dest.Resource().Attributes().Remove(multitudesauthextension.InternalApiKeyAttr)
-		byToken[token].rlIndices = append(byToken[token].rlIndices, i)
+		byKey[key].rlIndices = append(byKey[key].rlIndices, i)
 	}
 
 	successfulIndices := make(map[int]bool)
 	var firstErr error
-	for _, token := range tokenOrder {
-		batch := byToken[token]
-		if err := e.exportLogsWithToken(ctx, batch.logs, token); err != nil {
+	for _, key := range keyOrder {
+		batch := byKey[key]
+		if err := e.exportLogsWithToken(ctx, batch.logs, batch.token); err != nil {
 			e.logger.Error("Failed to export logs",
 				zap.Int("log_record_count", batch.logs.LogRecordCount()),
 				zap.Error(err),
