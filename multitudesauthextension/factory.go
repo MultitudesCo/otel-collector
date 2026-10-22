@@ -5,7 +5,6 @@ import (
 
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/extension"
-	"go.opentelemetry.io/collector/extension/auth"
 )
 
 const Type = "multitudes_auth"
@@ -30,9 +29,5 @@ func createExtension(
 ) (extension.Extension, error) {
 	_ = cfg.(*Config)
 	ext := newExtension(set.Logger)
-	return auth.NewServer(
-		auth.WithServerAuthenticate(ext.Authenticate),
-		auth.WithServerStart(ext.Start),
-		auth.WithServerShutdown(ext.Shutdown),
-	), nil
+	return ext, nil
 }

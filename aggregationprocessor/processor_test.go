@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/component/componenttest"
 	"go.opentelemetry.io/collector/consumer"
 	"go.opentelemetry.io/collector/consumer/consumertest"
@@ -28,7 +29,7 @@ func TestAggregationProcessor(t *testing.T) {
 	}
 
 	factory := NewFactory()
-	set := processortest.NewNopSettings()
+	set := processortest.NewNopSettings(component.MustNewType(Type))
 	processor, err := factory.CreateMetrics(
 		context.Background(),
 		set,
@@ -75,7 +76,7 @@ func TestAggregationProcessorEmission(t *testing.T) {
 	}
 
 	factory := NewFactory()
-	set := processortest.NewNopSettings()
+	set := processortest.NewNopSettings(component.MustNewType(Type))
 	processor, err := factory.CreateMetrics(
 		context.Background(),
 		set,
@@ -516,7 +517,7 @@ func TestEmitMetricsErrorPath(t *testing.T) {
 	}
 
 	factory := NewFactory()
-	set := processortest.NewNopSettings()
+	set := processortest.NewNopSettings(component.MustNewType(Type))
 	processor, err := factory.CreateMetrics(context.Background(), set, cfg, errSink)
 	if err != nil {
 		t.Fatalf("Failed to create processor: %v", err)
@@ -957,7 +958,7 @@ func TestShutdownEmitsRemainingMetrics(t *testing.T) {
 	}
 
 	factory := NewFactory()
-	set := processortest.NewNopSettings()
+	set := processortest.NewNopSettings(component.MustNewType(Type))
 	processor, err := factory.CreateMetrics(context.Background(), set, cfg, sink)
 	if err != nil {
 		t.Fatalf("Failed to create processor: %v", err)
@@ -1315,7 +1316,7 @@ func TestConsumeMetrics_InjectsApiKeyFromContext(t *testing.T) {
 	}
 
 	factory := NewFactory()
-	set := processortest.NewNopSettings()
+	set := processortest.NewNopSettings(component.MustNewType(Type))
 	proc, err := factory.CreateMetrics(context.Background(), set, cfg, sink)
 	if err != nil {
 		t.Fatalf("Failed to create processor: %v", err)
@@ -1364,7 +1365,7 @@ func TestConsumeMetrics_NoInjectionWithoutContextToken(t *testing.T) {
 	}
 
 	factory := NewFactory()
-	set := processortest.NewNopSettings()
+	set := processortest.NewNopSettings(component.MustNewType(Type))
 	proc, err := factory.CreateMetrics(context.Background(), set, cfg, sink)
 	if err != nil {
 		t.Fatalf("Failed to create processor: %v", err)
@@ -1404,7 +1405,7 @@ func TestConsumeMetrics_StripClientSuppliedApiKey(t *testing.T) {
 	}
 
 	factory := NewFactory()
-	set := processortest.NewNopSettings()
+	set := processortest.NewNopSettings(component.MustNewType(Type))
 	proc, err := factory.CreateMetrics(context.Background(), set, cfg, sink)
 	if err != nil {
 		t.Fatalf("Failed to create processor: %v", err)
@@ -1448,7 +1449,7 @@ func TestConsumeMetrics_ContextTokenOverridesClientSuppliedApiKey(t *testing.T) 
 	}
 
 	factory := NewFactory()
-	set := processortest.NewNopSettings()
+	set := processortest.NewNopSettings(component.MustNewType(Type))
 	proc, err := factory.CreateMetrics(context.Background(), set, cfg, sink)
 	if err != nil {
 		t.Fatalf("Failed to create processor: %v", err)
