@@ -31,6 +31,9 @@ COPY --from=builder /build/dist/otelcol-multitudes /otelcol-multitudes
 # Copy version file for runtime logging
 COPY VERSION /VERSION
 
+# Entrypoint wrapper: shortens flush intervals to 1m when MULTITUDES_DEBUG is set
+COPY --chmod=755 docker-entrypoint.sh /docker-entrypoint.sh
+
 # Copy the production collector configuration
 # For local development, docker-compose will volume mount otel-collector-config.local.yaml
 COPY otel-collector-config.yaml /etc/otelcol-contrib/otel-collector-config.yaml
@@ -44,5 +47,5 @@ COPY otel-collector-config.yaml /etc/otelcol-contrib/otel-collector-config.yaml
 EXPOSE 4317 4318 55679 13132 13133
 
 # Default command (can be overridden in docker-compose or ECS)
-ENTRYPOINT ["/otelcol-multitudes"]
+ENTRYPOINT ["/docker-entrypoint.sh"]
 CMD ["--config=/etc/otelcol-contrib/otel-collector-config.yaml"]

@@ -211,17 +211,20 @@ The collector is configured via environment variables:
 |---|---|---|
 | `MULTITUDES_INTEGRATION_TOKEN` | Yes | Bearer token provided by Multitudes |
 | `MULTITUDES_INTEGRATION_ENDPOINT` | Yes | Multitudes ingestion endpoint |
-| `MULTITUDES_DEBUG` | No | Set to any non-empty value to enable verbose debug logging from the aggregation processor |
+| `MULTITUDES_DEBUG` | No | Set to any non-empty value to enable verbose debug logging from the aggregation and logs processors, and to flush metrics and logs every ~1 minute instead of the usual cadence. Do not enable in production |
+| `MULTITUDES_BATCH_TIMEOUT` | No | How long the batch processor holds data before sending (default `5m`; `15s` in debug mode) |
+| `MULTITUDES_AGGREGATION_INTERVAL` | No | Aggregation window for metrics (default `5m`; `1m` in debug mode). `MULTITUDES_EMIT_INTERVAL` must be less than this value or the collector will not start |
+| `MULTITUDES_EMIT_INTERVAL` | No | How often completed aggregation windows are emitted (default `1m`; `15s` in debug mode). Must be less than `MULTITUDES_AGGREGATION_INTERVAL` |
 
 ### Aggregation
 
-The collector aggregates metrics by `user.email` over a 5 minute window before sending to Multitudes. This means:
+The collector aggregates metrics by `user.email` over a 5 minute window by default before sending to Multitudes. This means:
 
 - Raw per-request metrics are never sent externally
 - Only per-user totals per time window are transmitted
 - Reduction in network traffic
 
-The aggregation window and other settings can be adjusted in `otel-collector-config.yaml`.
+The aggregation window and other settings can be adjusted in `otel-collector-config.yaml`, or with the `MULTITUDES_AGGREGATION_INTERVAL`, `MULTITUDES_EMIT_INTERVAL` and `MULTITUDES_BATCH_TIMEOUT` environment variables. When `MULTITUDES_DEBUG` is set, the window is shortened to 1 minute and the batch timeout to 15 seconds (see [Configuration](#configuration)). The emit interval must always be shorter than the aggregation window.
 
 ## Ports
 
