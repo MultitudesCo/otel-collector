@@ -303,21 +303,23 @@ func TestLogsProcessorEmptyLogs(t *testing.T) {
 	}
 }
 
-func TestFormatAttrsOmitsTokenAndTruncates(t *testing.T) {
+func TestFormatAttrsRedactsAndOmitsToken(t *testing.T) {
 	m := pcommon.NewMap()
 	m.PutStr(multitudesauthextension.InternalApiKeyAttr, "mk_secret")
-	m.PutStr("user.email", "a@b.com")
-	m.PutStr("prompt", strings.Repeat("x", 200))
+	m.PutStr("user.email", "josh@example.com")
+	m.PutStr("event.name", "codex.api_request")
+	m.PutStr("prompt", "super secret prompt text")
 
 	got := formatAttrs(m)
 
-	if strings.Contains(got, "mk_secret") || strings.Contains(got, multitudesauthextension.InternalApiKeyAttr) {
-		t.Fatalf("token leaked into debug output: %q", got)
+	for _, leaked := range []string{"mk_secret", multitudesauthextension.InternalApiKeyAttr, "josh@", "super secret"} {
+		if strings.Contains(got, leaked) {
+			t.Fatalf("%q leaked into debug output: %q", leaked, got)
+		}
 	}
-	if !strings.Contains(got, "user.email=a@b.com") {
-		t.Fatalf("missing user.email: %q", got)
-	}
-	if !strings.Contains(got, strings.Repeat("x", maxDebugValueLen)+"...") || strings.Contains(got, strings.Repeat("x", maxDebugValueLen+1)) {
-		t.Fatalf("value not truncated: %q", got)
+	for _, want := range []string{"user.email=jo***@example.com", "event.name=codex.api_request", "prompt=<24 chars>"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("missing %q in %q", want, got)
+		}
 	}
 }

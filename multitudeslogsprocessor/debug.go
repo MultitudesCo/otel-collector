@@ -13,9 +13,25 @@ import (
 	"github.com/multitudes/otel-collector/multitudesauthextension"
 )
 
-// maxDebugValueLen caps attribute values in debug output so large values
-// (e.g. prompt text) don't flood the logs.
-const maxDebugValueLen = 80
+// debugValueAllowlist is the set of attributes whose values are safe to print.
+// Every other attribute is printed as its key and value length only, so prompt
+// text, tool arguments and credentials never reach the collector logs.
+var debugValueAllowlist = map[string]bool{
+	"service.name":    true,
+	"service.version": true,
+	"event.name":      true,
+	"event.timestamp": true,
+	"model":           true,
+	"app.version":     true,
+	"terminal.type":   true,
+	"success":         true,
+	"status_code":     true,
+	"duration_ms":     true,
+}
+
+// emailAttr is printed masked (e.g. "jo***@example.com") so it can be matched
+// without exposing the full address.
+const emailAttr = "user.email"
 
 func isDebug() bool {
 	return os.Getenv("MULTITUDES_DEBUG") != ""
@@ -50,7 +66,8 @@ func debugLogRecords(ld plog.Logs) {
 }
 
 // formatAttrs renders attributes as sorted "key=value" pairs, skipping the
-// internal token attribute and truncating long values.
+// internal token attribute. Only allowlisted values are printed; user.email is
+// masked and all other values are replaced by their length.
 func formatAttrs(attrs pcommon.Map) string {
 	pairs := make([]string, 0, attrs.Len())
 	attrs.Range(func(k string, v pcommon.Value) bool {
@@ -58,12 +75,31 @@ func formatAttrs(attrs pcommon.Map) string {
 			return true
 		}
 		val := v.AsString()
-		if len(val) > maxDebugValueLen {
-			val = val[:maxDebugValueLen] + "..."
+		switch {
+		case k == emailAttr:
+			val = redact(val)
+		case !debugValueAllowlist[k]:
+			val = fmt.Sprintf("<%d chars>", len(val))
 		}
 		pairs = append(pairs, k+"="+val)
 		return true
 	})
 	sort.Strings(pairs)
 	return strings.Join(pairs, ", ")
+}
+
+// redact masks a value for safe logging (e.g. "josh@example.com" -> "jo***@example.com").
+func redact(s string) string {
+	for i, c := range s {
+		if c == '@' {
+			if i > 2 {
+				return s[:2] + "***" + s[i:]
+			}
+			return "***" + s[i:]
+		}
+	}
+	if len(s) > 2 {
+		return s[:2] + "***"
+	}
+	return "***"
 }
