@@ -5,7 +5,7 @@ go 1.26.0
 require (
 	go.opentelemetry.io/collector/component v1.56.0
 	go.opentelemetry.io/collector/extension v1.56.0
-	go.opentelemetry.io/collector/extension/extensionauth v1.56.0
+	go.opentelemetry.io/collector/extension/extensionauth v1.69.0
 	go.uber.org/zap v1.28.0
 )
 
