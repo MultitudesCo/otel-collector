@@ -323,3 +323,14 @@ func TestFormatAttrsRedactsAndOmitsToken(t *testing.T) {
 		}
 	}
 }
+
+func TestFormatAttrsMultipleEmailsNotExposed(t *testing.T) {
+	m := pcommon.NewMap()
+	m.PutStr("user.email", "alice@example.com,bob@example.com")
+
+	got := formatAttrs(m)
+
+	if strings.Contains(got, "bob") || strings.Contains(got, "alice") {
+		t.Fatalf("email leaked: %q", got)
+	}
+}

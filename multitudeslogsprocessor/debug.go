@@ -76,6 +76,9 @@ func formatAttrs(attrs pcommon.Map) string {
 		}
 		val := v.AsString()
 		switch {
+		case k == emailAttr && strings.ContainsAny(val, ", ;"):
+			// Not a single address; don't risk exposing the later ones.
+			val = fmt.Sprintf("<%d chars>", len(val))
 		case k == emailAttr:
 			val = redact(val)
 		case !debugValueAllowlist[k]:
