@@ -4,10 +4,10 @@ go 1.26.0
 
 require (
 	github.com/multitudes/otel-collector/multitudesauthextension v0.0.0-00010101000000-000000000000
-	go.opentelemetry.io/collector/component v1.56.0
-	go.opentelemetry.io/collector/consumer v1.56.0
-	go.opentelemetry.io/collector/exporter v1.56.0
-	go.opentelemetry.io/collector/pdata v1.56.0
+	go.opentelemetry.io/collector/component v1.69.0
+	go.opentelemetry.io/collector/consumer v1.69.0
+	go.opentelemetry.io/collector/exporter v1.69.0
+	go.opentelemetry.io/collector/pdata v1.69.0
 	go.uber.org/zap v1.28.0
 	google.golang.org/grpc v1.84.0
 )
@@ -18,18 +18,18 @@ require (
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.3-0.20250322232337-35a7c28c31ee // indirect
-	go.opentelemetry.io/collector/extension v1.56.0 // indirect
+	go.opentelemetry.io/collector/extension v1.69.0 // indirect
 	go.opentelemetry.io/collector/extension/extensionauth v1.56.0 // indirect
-	go.opentelemetry.io/collector/featuregate v1.56.0 // indirect
-	go.opentelemetry.io/collector/internal/componentalias v0.150.0 // indirect
-	go.opentelemetry.io/collector/pipeline v1.56.0 // indirect
-	go.opentelemetry.io/otel v1.45.0 // indirect
-	go.opentelemetry.io/otel/metric v1.45.0 // indirect
-	go.opentelemetry.io/otel/trace v1.45.0 // indirect
+	go.opentelemetry.io/collector/featuregate v1.69.0 // indirect
+	go.opentelemetry.io/collector/internal/componentalias v0.163.0 // indirect
+	go.opentelemetry.io/collector/pipeline v1.69.0 // indirect
+	go.opentelemetry.io/otel v1.47.0 // indirect
+	go.opentelemetry.io/otel/metric v1.47.0 // indirect
+	go.opentelemetry.io/otel/trace v1.47.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	golang.org/x/sys v0.47.0 // indirect
+	golang.org/x/sys v0.48.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260706201446-f0a921348800 // indirect
-	google.golang.org/protobuf v1.36.11 // indirect
+	google.golang.org/protobuf v1.36.12 // indirect
 )
 
 replace github.com/multitudes/otel-collector/multitudesauthextension => ../multitudesauthextension
