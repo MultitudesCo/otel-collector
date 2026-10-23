@@ -19,8 +19,7 @@ func isDebug() bool {
 
 func debugLog(args ...any) {
 	if isDebug() {
-		// Same timestamp format as the collector's own (zap) log lines.
-		fmt.Println(append([]any{time.Now().UTC().Format("2006-01-02T15:04:05.000Z")}, args...)...)
+		fmt.Println(args...)
 	}
 }
 
