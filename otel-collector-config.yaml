@@ -46,8 +46,10 @@ processors:
 
   aggregation:
     attribute_key: "user.email"        # Group by user email
-    aggregation_interval: 5m
-    emit_interval: 1m
+    # Overridable via env; docker-entrypoint.sh shortens these when
+    # MULTITUDES_DEBUG is set so data flows every ~1m.
+    aggregation_interval: ${env:MULTITUDES_AGGREGATION_INTERVAL:-5m}
+    emit_interval: ${env:MULTITUDES_EMIT_INTERVAL:-1m}
 
   # multitudes_logs injects the per-client Bearer token (extracted by
   # multitudes_auth) into each ResourceLogs resource attribute so it
@@ -56,7 +58,7 @@ processors:
 
   # Batch processor - flushes completed buckets promptly
   batch:
-    timeout: 5m
+    timeout: ${env:MULTITUDES_BATCH_TIMEOUT:-5m}
     send_batch_size: 20000      # Send early if batch reaches 20k metrics (safety valve)
     send_batch_max_size: 25000  # Hard limit
 
