@@ -2,11 +2,13 @@ package multitudeslogsprocessor
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/component/componenttest"
 	"go.opentelemetry.io/collector/consumer/consumertest"
+	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/plog"
 	"go.opentelemetry.io/collector/processor/processortest"
 
@@ -298,5 +300,37 @@ func TestLogsProcessorEmptyLogs(t *testing.T) {
 
 	if len(sink.AllLogs()) != 1 {
 		t.Errorf("Expected 1 (empty) log batch forwarded, got %d", len(sink.AllLogs()))
+	}
+}
+
+func TestFormatAttrsRedactsAndOmitsToken(t *testing.T) {
+	m := pcommon.NewMap()
+	m.PutStr(multitudesauthextension.InternalApiKeyAttr, "mk_secret")
+	m.PutStr("user.email", "josh@example.com")
+	m.PutStr("event.name", "codex.api_request")
+	m.PutStr("prompt", "super secret prompt text")
+
+	got := formatAttrs(m)
+
+	for _, leaked := range []string{"mk_secret", multitudesauthextension.InternalApiKeyAttr, "josh@", "super secret"} {
+		if strings.Contains(got, leaked) {
+			t.Fatalf("%q leaked into debug output: %q", leaked, got)
+		}
+	}
+	for _, want := range []string{"user.email=jo***@example.com", "event.name=codex.api_request", "prompt=<24 chars>"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("missing %q in %q", want, got)
+		}
+	}
+}
+
+func TestFormatAttrsMultipleEmailsNotExposed(t *testing.T) {
+	m := pcommon.NewMap()
+	m.PutStr("user.email", "alice@example.com,bob@example.com")
+
+	got := formatAttrs(m)
+
+	if strings.Contains(got, "bob") || strings.Contains(got, "alice") {
+		t.Fatalf("email leaked: %q", got)
 	}
 }

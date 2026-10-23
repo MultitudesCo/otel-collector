@@ -61,5 +61,7 @@ func (p *logsProcessor) ConsumeLogs(ctx context.Context, ld plog.Logs) error {
 		p.logger.Debug("No API key in context; logs will use fallback token at export time")
 	}
 
+	debugLogRecords(ld)
+
 	return p.nextConsumer.ConsumeLogs(ctx, ld)
 }
