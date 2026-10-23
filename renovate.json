@@ -2,5 +2,35 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
     "config:recommended"
+  ],
+  "customManagers": [
+    {
+      "description": "Collector and contrib components listed in builder-config.yaml",
+      "customType": "regex",
+      "managerFilePatterns": ["/^builder-config\\.yaml$/"],
+      "matchStrings": [
+        "gomod: (?<depName>(?:go\\.opentelemetry\\.io|github\\.com/open-telemetry)/\\S+) (?<currentValue>v\\d+\\.\\d+\\.\\d+)"
+      ],
+      "datasourceTemplate": "go"
+    },
+    {
+      "description": "OpenTelemetry Collector Builder version installed in the Dockerfile",
+      "customType": "regex",
+      "managerFilePatterns": ["/^Dockerfile$/"],
+      "matchStrings": [
+        "go install (?<depName>go\\.opentelemetry\\.io/collector/cmd/builder)@(?<currentValue>v\\d+\\.\\d+\\.\\d+)"
+      ],
+      "datasourceTemplate": "go"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "Collector modules, the builder and contrib components are released in lockstep and must stay on the same version, so update them in a single PR.",
+      "matchPackageNames": [
+        "go.opentelemetry.io/collector/**",
+        "github.com/open-telemetry/opentelemetry-collector-contrib/**"
+      ],
+      "groupName": "opentelemetry collector"
+    }
   ]
 }

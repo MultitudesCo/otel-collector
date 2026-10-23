@@ -2,7 +2,7 @@
 FROM golang:1.27 AS builder
 
 # Install OpenTelemetry Collector Builder
-RUN go install go.opentelemetry.io/collector/cmd/builder@v0.150.0
+RUN go install go.opentelemetry.io/collector/cmd/builder@v0.163.0
 
 WORKDIR /build
 
