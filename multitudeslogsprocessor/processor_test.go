@@ -2,11 +2,13 @@ package multitudeslogsprocessor
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/component/componenttest"
 	"go.opentelemetry.io/collector/consumer/consumertest"
+	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/plog"
 	"go.opentelemetry.io/collector/processor/processortest"
 
@@ -298,5 +300,24 @@ func TestLogsProcessorEmptyLogs(t *testing.T) {
 
 	if len(sink.AllLogs()) != 1 {
 		t.Errorf("Expected 1 (empty) log batch forwarded, got %d", len(sink.AllLogs()))
+	}
+}
+
+func TestFormatAttrsOmitsTokenAndTruncates(t *testing.T) {
+	m := pcommon.NewMap()
+	m.PutStr(multitudesauthextension.InternalApiKeyAttr, "mk_secret")
+	m.PutStr("user.email", "a@b.com")
+	m.PutStr("prompt", strings.Repeat("x", 200))
+
+	got := formatAttrs(m)
+
+	if strings.Contains(got, "mk_secret") || strings.Contains(got, multitudesauthextension.InternalApiKeyAttr) {
+		t.Fatalf("token leaked into debug output: %q", got)
+	}
+	if !strings.Contains(got, "user.email=a@b.com") {
+		t.Fatalf("missing user.email: %q", got)
+	}
+	if !strings.Contains(got, strings.Repeat("x", maxDebugValueLen)+"...") || strings.Contains(got, strings.Repeat("x", maxDebugValueLen+1)) {
+		t.Fatalf("value not truncated: %q", got)
 	}
 }
