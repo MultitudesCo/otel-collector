@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"go.opentelemetry.io/collector/component"
+	"go.opentelemetry.io/collector/extension/extensionauth"
 	"go.uber.org/zap"
 )
 
@@ -21,6 +22,8 @@ type multitudesAuth struct {
 	logger *zap.Logger
 }
 
+var _ extensionauth.Server = (*multitudesAuth)(nil)
+
 func newExtension(logger *zap.Logger) *multitudesAuth {
 	return &multitudesAuth{logger: logger}
 }
@@ -34,7 +37,7 @@ func (e *multitudesAuth) Shutdown(_ context.Context) error {
 	return nil
 }
 
-// Authenticate implements auth.Server. It is called by the OTLP receiver for
+// Authenticate implements extensionauth.Server. It is called by the OTLP receiver for
 // every incoming request (both HTTP and gRPC). It extracts the Bearer token
 // from the Authorization header and stores it in the returned context.
 //
