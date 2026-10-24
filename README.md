@@ -155,7 +155,9 @@ The version is stored in the `VERSION` file in the repository root. To release a
 2. Bump the version in `VERSION` (e.g. `1.1.0` → `1.2.0`)
 3. Open and merge a PR into `prod`
 
-CI will automatically create the git tag and build the versioned Docker image. If a PR does not require a version bump (e.g. documentation changes), leave `VERSION` unchanged.
+When the PR merges, CI builds and pushes the Docker image (tagged with the version, `latest` and `sha-<short commit SHA>`), then creates the `v<version>` git tag and a GitHub release with generated release notes. The release is only created if that tag does not already exist, so merges that leave `VERSION` unchanged (e.g. documentation changes) do not create a release.
+
+If the release step fails, you can create the release manually with `gh release create v<version> --target <commit> --generate-notes`.
 
 ## Building the image locally
 
