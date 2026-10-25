@@ -13,6 +13,9 @@ on:
         required: true
         type: string
 
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -128,6 +131,28 @@ jobs:
               return;
             } catch (error) {
               if (error.status !== 404) throw error;
+            }
+
+            // GitHub ignores target_commitish when the tag already exists, so a
+            // leftover tag pointing at another commit would make the release
+            // describe different code from the image this run published.
+            let tagCommit;
+            try {
+              const ref = await github.rest.git.getRef({ owner, repo, ref: `tags/${tag}` });
+              tagCommit = ref.data.object.sha;
+              if (ref.data.object.type === 'tag') {
+                const annotated = await github.rest.git.getTag({ owner, repo, tag_sha: tagCommit });
+                tagCommit = annotated.data.object.sha;
+              }
+            } catch (error) {
+              if (error.status !== 404) throw error;
+            }
+            if (tagCommit && tagCommit !== context.sha) {
+              core.setFailed(
+                `Tag ${tag} already exists at ${tagCommit}, but this run published ${context.sha}. ` +
+                  'Move or delete the tag, or create the release manually.'
+              );
+              return;
             }
 
             // Uses the existing tag if there is one, otherwise creates it at this commit.
