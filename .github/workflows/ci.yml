@@ -93,7 +93,7 @@ jobs:
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/prod' && github.event_name != 'workflow_dispatch' }}
             type=raw,value=${{ steps.version.outputs.value }},enable=${{ github.ref == 'refs/heads/prod' && github.event_name != 'workflow_dispatch' }}
 
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v7
         with:
           context: .
           platforms: linux/amd64,linux/arm64
